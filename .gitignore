@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test outputs / scratch
+/tmp/
+*.tmp
+*.bak
+
+# Session state (per-developer, not for sharing)
+# Comment out the next line if you DO want session/ tracked
+# data/_session/
