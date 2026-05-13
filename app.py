@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 
 from src.readers import load_eeg
 from src.runner import run_all_analyses
+from src.analyses.sleep_onset import detect_sleep_window
 from src.comparison import compare_findings
 from src.ai import (
     interpret_findings,
@@ -96,10 +97,51 @@ variant = st.sidebar.text_input(
 st.sidebar.header(T("sidebar_windows"))
 st.sidebar.caption(T("sidebar_windows_caption"))
 
-wake_start_s = st.sidebar.number_input(T("wake_start"), value=0)
-wake_end_s = st.sidebar.number_input(T("wake_end"), value=3600)
-sleep_start_s = st.sidebar.number_input(T("sleep_start"), value=25200)
-sleep_end_s = st.sidebar.number_input(T("sleep_end"), value=54000)
+# Allow Streamlit to programmatically update sleep window from auto-detect
+if "wake_start_default" not in st.session_state:
+    st.session_state.wake_start_default = 0
+    st.session_state.wake_end_default = 3600
+    st.session_state.sleep_start_default = 25200
+    st.session_state.sleep_end_default = 54000
+
+wake_start_s = st.sidebar.number_input(T("wake_start"),
+                                       value=st.session_state.wake_start_default,
+                                       key="wake_start_input")
+wake_end_s = st.sidebar.number_input(T("wake_end"),
+                                     value=st.session_state.wake_end_default,
+                                     key="wake_end_input")
+sleep_start_s = st.sidebar.number_input(T("sleep_start"),
+                                        value=st.session_state.sleep_start_default,
+                                        key="sleep_start_input")
+sleep_end_s = st.sidebar.number_input(T("sleep_end"),
+                                      value=st.session_state.sleep_end_default,
+                                      key="sleep_end_input")
+
+# Auto-detect button — populated after a file is loaded
+if st.session_state.get("loaded_rec_for_autodetect") is not None:
+    if st.sidebar.button(T("auto_detect_button"), key="autodetect_btn"):
+        rec_for_detect = st.session_state["loaded_rec_for_autodetect"]
+        try:
+            with st.sidebar:
+                with st.spinner("Detecting..."):
+                    sw = detect_sleep_window(rec_for_detect)
+            st.session_state.sleep_start_default = int(sw.sleep_start_hours * 3600)
+            st.session_state.sleep_end_default = int(sw.sleep_end_hours * 3600)
+            # Wake window: use the first 60 minutes before the detected sleep
+            wake_start = max(0, int((sw.sleep_start_hours - 1.5) * 3600))
+            wake_end = max(wake_start + 600, int((sw.sleep_start_hours - 0.5) * 3600))
+            st.session_state.wake_start_default = wake_start
+            st.session_state.wake_end_default = wake_end
+            st.sidebar.success(T("auto_detect_success",
+                                  start=sw.sleep_start_hours,
+                                  end=sw.sleep_end_hours,
+                                  duration=sw.sleep_duration_hours,
+                                  conf=sw.confidence))
+            if sw.confidence == "low":
+                st.sidebar.warning(T("auto_detect_low_conf"))
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(T("auto_detect_failed", error=str(e)))
 
 
 # ─── Sidebar: AI provider settings ──────────────────────────────────────────
@@ -188,6 +230,9 @@ def _file_uploader_section(slot_key: str, header_key: str):
         with st.spinner(T("reading", filename=source_path.name)):
             rec = load_eeg(source_path)
         _show_file_metrics(rec)
+        # Single-mode: register for auto-detect (compare mode uses two slots)
+        if slot_key == "single":
+            st.session_state["loaded_rec_for_autodetect"] = rec
         return rec
     except Exception as e:
         st.error(T("load_error", error=str(e)))
@@ -205,10 +250,35 @@ def _resolve_windows(rec):
 
 def _render_findings_tabs(findings: dict, key_prefix: str = ""):
     """Render per-analysis tabs for one findings dict."""
-    tab_topo, tab_spindle, tab_bg, tab_burst, tab_morph, tab_ton, tab_raw = st.tabs([
+    tab_qc, tab_topo, tab_spindle, tab_bg, tab_burst, tab_morph, tab_ton, tab_raw = st.tabs([
+        T("tab_quality"),
         T("tab_topography"), T("tab_spindles"), T("tab_background"),
         T("tab_bursts"), T("tab_morphology"), T("tab_time_of_night"), T("tab_raw"),
     ])
+
+    with tab_qc:
+        q = findings.get("quality", {})
+        if q:
+            st.subheader(T("qc_header"))
+            col1, col2, col3 = st.columns(3)
+            col1.metric(T("qc_grade"), q.get("overall_grade", "?"))
+            col2.metric(T("qc_usable_epochs"),
+                        f"{q.get('pct_usable', 0):.0f}% "
+                        f"({q.get('n_total_epochs', 0) - q.get('n_artifact_epochs', 0)}/"
+                        f"{q.get('n_total_epochs', 0)})")
+            col3.metric(T("qc_good_channels"),
+                        f"{q.get('n_good_channels', 0)}/{q.get('n_total_channels', 0)}")
+
+            flagged = [c for c in q.get("channel_flags", []) if c["flag"] != "good"]
+            if flagged:
+                st.write(T("qc_flagged_channels_label"))
+                st.dataframe(pd.DataFrame(flagged), use_container_width=True,
+                             hide_index=True)
+            if q.get("warnings"):
+                for w in q["warnings"]:
+                    st.warning(w)
+            else:
+                st.success(T("qc_no_warnings"))
 
     with tab_topo:
         t = findings.get("topography", {})

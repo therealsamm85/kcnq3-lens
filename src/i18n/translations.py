@@ -255,6 +255,28 @@ TRANSLATIONS = {
             "are characteristic of sleep-activated patterns like CSWS/ESES."
         ),
         "ton_peak_label": "Peak: {peak:.1f}/min at {hours:.1f}h",
+
+        # Auto sleep detection
+        "auto_detect_button": "🔍 Auto-detect sleep window",
+        "auto_detect_success": (
+            "Detected sleep window: {start:.1f}h–{end:.1f}h "
+            "({duration:.1f}h, confidence: {conf})"
+        ),
+        "auto_detect_low_conf": (
+            "⚠ Low confidence — please verify the detected window manually. "
+            "Overnight recordings with heavy artifact or unusual sleep "
+            "architecture can confuse the heuristic."
+        ),
+        "auto_detect_failed": "Auto-detect failed: {error}",
+
+        # Quality control
+        "tab_quality": "Quality",
+        "qc_header": "Recording quality",
+        "qc_grade": "Overall grade",
+        "qc_usable_epochs": "Usable epochs",
+        "qc_good_channels": "Good channels",
+        "qc_flagged_channels_label": "Flagged channels:",
+        "qc_no_warnings": "No quality concerns detected.",
     },
 
     # ─── German ────────────────────────────────────────────────────────────
@@ -529,5 +551,25 @@ TRANSLATIONS = {
             "charakteristisch für schlaf-aktivierte Muster wie CSWS/ESES."
         ),
         "ton_peak_label": "Spitze: {peak:.1f}/min bei {hours:.1f}h",
+
+        "auto_detect_button": "🔍 Schlaf-Fenster automatisch erkennen",
+        "auto_detect_success": (
+            "Erkanntes Schlaf-Fenster: {start:.1f}h–{end:.1f}h "
+            "({duration:.1f}h, Konfidenz: {conf})"
+        ),
+        "auto_detect_low_conf": (
+            "⚠ Niedrige Konfidenz — bitte das erkannte Fenster manuell prüfen. "
+            "Übernacht-Aufnahmen mit viel Artefakt oder ungewöhnlicher "
+            "Schlafarchitektur können die Heuristik verwirren."
+        ),
+        "auto_detect_failed": "Auto-Erkennung fehlgeschlagen: {error}",
+
+        "tab_quality": "Qualität",
+        "qc_header": "Aufnahme-Qualität",
+        "qc_grade": "Gesamt-Note",
+        "qc_usable_epochs": "Nutzbare Epochen",
+        "qc_good_channels": "Saubere Kanäle",
+        "qc_flagged_channels_label": "Markierte Kanäle:",
+        "qc_no_warnings": "Keine Qualitäts-Probleme erkannt.",
     },
 }

@@ -16,6 +16,7 @@ from .analyses import (
     compute_sustained_bursts,
     compute_spike_morphology,
     compute_time_of_night,
+    assess_quality,
 )
 from .analyses.topography import summarize_topography
 from .analyses.spindles import summarize_spindles
@@ -23,6 +24,7 @@ from .analyses.background import summarize_background
 from .analyses.bursts import summarize_bursts
 from .analyses.morphology import summarize_morphology
 from .analyses.time_of_night import summarize_time_of_night
+from .analyses.quality import summarize_quality
 
 
 def run_all_analyses(
@@ -57,6 +59,16 @@ def run_all_analyses(
     def _emit(name: str, frac: float):
         if progress_callback:
             progress_callback(name, frac)
+
+    # --- 0. Quality control (runs first, fast) ---
+    _emit("quality", 0.02)
+    try:
+        qc = assess_quality(
+            rec, start_epoch=sleep_start_epoch, end_epoch=sleep_end_epoch
+        )
+        findings["quality"] = summarize_quality(qc)
+    except Exception as e:
+        errors["quality"] = str(e)
 
     # --- 1. Topography ---
     _emit("topography", 0.05)
