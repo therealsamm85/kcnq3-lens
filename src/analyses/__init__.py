@@ -6,6 +6,8 @@ from .background import compute_background_power, BackgroundResult
 from .bursts import compute_sustained_bursts, BurstResult
 from .morphology import compute_spike_morphology, MorphologyResult
 from .time_of_night import compute_time_of_night, TimeOfNightResult
+from .sleep_onset import detect_sleep_window, SleepWindowResult
+from .quality import assess_quality, QualityResult
 
 __all__ = [
     "compute_topography", "TopographyResult",
@@ -14,4 +16,6 @@ __all__ = [
     "compute_sustained_bursts", "BurstResult",
     "compute_spike_morphology", "MorphologyResult",
     "compute_time_of_night", "TimeOfNightResult",
+    "detect_sleep_window", "SleepWindowResult",
+    "assess_quality", "QualityResult",
 ]
