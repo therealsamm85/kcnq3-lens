@@ -97,6 +97,29 @@ def compute_sustained_bursts(
     mad = np.median(np.abs(filtered - np.median(filtered)))
     threshold = threshold_mad_multiplier * mad
 
+    # ── Per-channel adaptive baseline (v0.3 fix) ─────────────────────────────
+    # Compute each EEG channel's baseline peak-to-peak amplitude (over the
+    # full window). A channel is "involved" in a burst only if its p-p
+    # during the burst exceeds 3× its own baseline median p-p.
+    # The previous v0.2 implementation used a fixed 500 (ADC/µV) threshold
+    # which was below baseline amplitude on NK EEG-1200A recordings, so
+    # almost every burst trivially returned 18-19/19 channels — providing
+    # zero discriminative information. See audit_findings.md.
+    sec_per_sample = 1 / rec.sfreq
+    baseline_window_samples = int(2.0 * rec.sfreq)  # 2-second tiles
+    if multi.shape[1] >= baseline_window_samples * 2:
+        n_tiles = multi.shape[1] // baseline_window_samples
+        tile_ptp = np.zeros((multi.shape[0], n_tiles), dtype=np.float32)
+        for t in range(n_tiles):
+            s = t * baseline_window_samples
+            e = s + baseline_window_samples
+            tile_ptp[:, t] = np.ptp(multi[:, s:e], axis=1)
+        baseline_ch_ptp = np.median(tile_ptp, axis=1)
+    else:
+        # Window too short for tile-based estimate; use full-window p-p as fallback
+        baseline_ch_ptp = np.ptp(multi, axis=1).astype(np.float32)
+    involvement_threshold = baseline_ch_ptp * 3.0
+
     # Smoothed envelope
     envelope = np.abs(filtered)
     win = max(1, int(0.25 * rec.sfreq))
@@ -104,7 +127,6 @@ def compute_sustained_bursts(
     above = env_smooth > threshold
 
     min_samples = int(min_duration_s * rec.sfreq)
-    sec_per_sample = 1 / rec.sfreq
     bursts: list[Burst] = []
     eeg_names = [rec.channel_names[c] for c in eeg_idx]
 
@@ -117,9 +139,10 @@ def compute_sustained_bursts(
             if (j - i) >= min_samples:
                 dur_s = (j - i) * sec_per_sample
                 start_s = i * sec_per_sample + start_epoch * epoch_seconds
-                # Multi-channel involvement check
+                # Multi-channel involvement: each channel must exceed 3× its
+                # own baseline median peak-to-peak amplitude
                 ch_amps = np.ptp(multi[:, i:j], axis=1)
-                n_involved = int(np.sum(ch_amps > 500))
+                n_involved = int(np.sum(ch_amps > involvement_threshold))
                 peak_ch_local = int(np.argmax(ch_amps))
                 peak_ch_name = eeg_names[peak_ch_local]
                 peak_amp = float(ch_amps[peak_ch_local])

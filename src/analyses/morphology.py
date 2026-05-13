@@ -9,6 +9,22 @@ The distribution matters clinically: predominantly simple spikes (>60%) suggest
 benign focal epilepsy patterns; predominantly complex spike-wave (>50%) suggests
 atypical absence / CSWS spectrum, which has different prognostic and treatment
 implications.
+
+Detection gating (v0.3 — fixes audit-discovered over-counting)
+--------------------------------------------------------------
+v0.1/v0.2 computed MAD once over the entire concatenated sleep window. On
+recordings with large CSWS bursts, this global MAD was inflated by the burst
+amplitudes — but during quiet inter-burst intervals, the now-too-low threshold
+still caught noise peaks in the 10-30 Hz band, producing event rates 6-17x
+above published literature.
+
+v0.3 fixes this by computing MAD **per 30-second epoch** and additionally
+requiring each peak to exceed a fraction of the local (epoch) RMS. This makes
+detection self-calibrating to each epoch's noise floor and rejects noise peaks
+in quiet intervals while preserving real spikes inside CSWS bursts.
+
+See data/_session/current/audit_findings.md for the validation report that
+surfaced the original bug.
 """
 
 from __future__ import annotations
@@ -68,20 +84,44 @@ def compute_spike_morphology(
         raise ValueError("No data in window.")
     trace = np.concatenate(segments)
 
+    # Filter once on the whole trace (filters need continuity at boundaries)
     det = sosfiltfilt(sos_det, trace)
     bb = sosfiltfilt(sos_bb, trace)
-    mad = np.median(np.abs(det - np.median(det)))
-    threshold = mad_multiplier * mad
 
-    # Find peaks with minimum 80 ms separation (avoid double-counting one spike)
-    peaks, _ = find_peaks(
-        np.abs(det),
-        height=threshold,
-        distance=max(1, int(0.08 * rec.sfreq)),
-    )
+    # ── PER-EPOCH MAD detection (v0.3 fix) ──────────────────────────────────
+    # Compute MAD inside each 30-second epoch separately so threshold tracks
+    # the local noise floor. Inside quiet inter-burst intervals, this produces
+    # a low local MAD and a correspondingly tight threshold — but we additionally
+    # require each peak to exceed 3× the epoch's RMS, which rejects noise peaks
+    # that just happen to be the local maximum.
+    samples_per_epoch = int(epoch_seconds * rec.sfreq)
+    min_dist = max(1, int(0.08 * rec.sfreq))
 
-    # Subsample to speed up morphology measurement
-    sample_every = max(1, len(peaks) // 3000)
+    all_peaks: list[int] = []
+    for ep_start in range(0, len(det), samples_per_epoch):
+        ep_end = min(ep_start + samples_per_epoch, len(det))
+        ep_det = det[ep_start:ep_end]
+        if len(ep_det) < min_dist * 2:
+            continue
+        ep_centered = ep_det - np.median(ep_det)
+        local_mad = np.median(np.abs(ep_centered))
+        local_rms = float(np.sqrt(np.mean(ep_det ** 2)))
+        # Require: peak > mad_multiplier × MAD  AND  peak > 3 × RMS
+        local_threshold = max(mad_multiplier * local_mad, 3.0 * local_rms)
+        if local_threshold <= 0 or not np.isfinite(local_threshold):
+            continue
+        local_peaks, _ = find_peaks(
+            np.abs(ep_det),
+            height=local_threshold,
+            distance=min_dist,
+        )
+        # Offset peaks back to global index space
+        all_peaks.extend((local_peaks + ep_start).tolist())
+
+    peaks = np.array(all_peaks, dtype=int)
+
+    # ── Morphology measurement on broadband (unchanged) ─────────────────────
+    sample_every = max(1, len(peaks) // 3000) if len(peaks) > 0 else 1
     durations_ms: list[float] = []
     for p in peaks[::sample_every]:
         win_l = max(0, p - 100)
