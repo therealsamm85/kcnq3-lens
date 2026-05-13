@@ -15,12 +15,14 @@ from .analyses import (
     compute_background_power,
     compute_sustained_bursts,
     compute_spike_morphology,
+    compute_time_of_night,
 )
 from .analyses.topography import summarize_topography
 from .analyses.spindles import summarize_spindles
 from .analyses.background import summarize_background
 from .analyses.bursts import summarize_bursts
 from .analyses.morphology import summarize_morphology
+from .analyses.time_of_night import summarize_time_of_night
 
 
 def run_all_analyses(
@@ -110,7 +112,20 @@ def run_all_analyses(
         findings["morphology"] = summarize_morphology(morph)
     except Exception as e:
         errors["morphology"] = str(e)
-    _emit("morphology", 1.0)
+    _emit("morphology", 0.95)
+
+    # --- 6. Time-of-night burden ---
+    try:
+        tn = compute_time_of_night(
+            rec,
+            start_epoch=sleep_start_epoch,
+            end_epoch=sleep_end_epoch,
+            bin_minutes=30.0,
+        )
+        findings["time_of_night"] = summarize_time_of_night(tn)
+    except Exception as e:
+        errors["time_of_night"] = str(e)
+    _emit("time_of_night", 1.0)
 
     findings["errors"] = errors
     return findings

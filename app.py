@@ -28,6 +28,7 @@ from src.ai import (
     get_provider_class,
 )
 from src.reports import build_doctor_pdf, build_parent_pdf
+from src.utils.plots import plot_topomap, plot_time_of_night
 from src.i18n import get_translator, LANGUAGES
 
 
@@ -204,9 +205,9 @@ def _resolve_windows(rec):
 
 def _render_findings_tabs(findings: dict, key_prefix: str = ""):
     """Render per-analysis tabs for one findings dict."""
-    tab_topo, tab_spindle, tab_bg, tab_burst, tab_morph, tab_raw = st.tabs([
+    tab_topo, tab_spindle, tab_bg, tab_burst, tab_morph, tab_ton, tab_raw = st.tabs([
         T("tab_topography"), T("tab_spindles"), T("tab_background"),
-        T("tab_bursts"), T("tab_morphology"), T("tab_raw"),
+        T("tab_bursts"), T("tab_morphology"), T("tab_time_of_night"), T("tab_raw"),
     ])
 
     with tab_topo:
@@ -214,6 +215,22 @@ def _render_findings_tabs(findings: dict, key_prefix: str = ""):
         if t:
             st.subheader(T("topo_header"))
             st.caption(T("topo_caption"))
+
+            # New: topographic scalp map
+            try:
+                channel_names = [c["name"] for c in t["all_channels"]]
+                channel_values = [c["median"] for c in t["all_channels"]]
+                st.markdown(f"**{T('topomap_title')}**")
+                st.caption(T("topomap_caption"))
+                fig_topo = plot_topomap(
+                    channel_names, channel_values,
+                    title="",
+                )
+                st.pyplot(fig_topo)
+            except Exception as e:
+                st.warning(f"Topographic map unavailable: {e}")
+
+            # Existing bar chart (kept as quick numerical reference)
             df = pd.DataFrame(t["all_channels"])
             df = df.sort_values("median", ascending=False).reset_index(drop=True)
             st.dataframe(df, use_container_width=True)
@@ -309,6 +326,27 @@ def _render_findings_tabs(findings: dict, key_prefix: str = ""):
                 st.info(T("morph_simple_classification"))
             else:
                 st.info(T("morph_mixed"))
+
+    with tab_ton:
+        tn = findings.get("time_of_night", {})
+        if tn:
+            st.subheader(T("ton_header"))
+            st.caption(T("ton_caption"))
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Peak (/min)", f"{tn.get('peak_count_per_min', 0):.1f}")
+            col2.metric("Peak at (h)", f"{tn.get('peak_bin_hours', 0):.1f}")
+            col3.metric("Total events", str(tn.get("total_events", 0)))
+
+            try:
+                fig_ton = plot_time_of_night(
+                    bin_centers_hours=tn.get("bin_centers", []),
+                    counts_per_min=tn.get("counts_per_min", []),
+                    title="",
+                    xlabel="Hours from recording start",
+                )
+                st.pyplot(fig_ton)
+            except Exception as e:
+                st.warning(f"Plot unavailable: {e}")
 
     with tab_raw:
         st.subheader(T("raw_header"))

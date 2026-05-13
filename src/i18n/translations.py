@@ -240,6 +240,21 @@ TRANSLATIONS = {
         ),
         "pdf_doctor_button": "📄 Download doctor report (PDF)",
         "pdf_parent_button": "📄 Download parent report (PDF)",
+
+        "tab_time_of_night": "Time of night",
+        "topomap_title": "Spike-activity topography (median kurtosis)",
+        "topomap_caption": (
+            "Hot spots show where epileptiform activity concentrates. "
+            "Reds = more activity; blues = less. Cz/Pz redness suggests "
+            "midline central-parietal involvement (SMA / speech-motor network)."
+        ),
+        "ton_header": "Spike burden across the night",
+        "ton_caption": (
+            "Spike count per minute in each 30-minute window. Peaks during "
+            "the first NREM cycle (typically 1–3 hours after sleep onset) "
+            "are characteristic of sleep-activated patterns like CSWS/ESES."
+        ),
+        "ton_peak_label": "Peak: {peak:.1f}/min at {hours:.1f}h",
     },
 
     # ─── German ────────────────────────────────────────────────────────────
@@ -499,5 +514,20 @@ TRANSLATIONS = {
         ),
         "pdf_doctor_button": "📄 Arzt-Bericht herunterladen (PDF)",
         "pdf_parent_button": "📄 Eltern-Bericht herunterladen (PDF)",
+
+        "tab_time_of_night": "Tagesverlauf",
+        "topomap_title": "Spike-Aktivitäts-Topographie (mediane Kurtosis)",
+        "topomap_caption": (
+            "Heiße Stellen zeigen, wo epileptiforme Aktivität konzentriert ist. "
+            "Rot = mehr Aktivität, Blau = weniger. Cz/Pz-Rot deutet auf "
+            "zentro-parietale Mittellinien-Beteiligung (SMA / Sprechmotor-Netzwerk)."
+        ),
+        "ton_header": "Spike-Belastung über die Nacht",
+        "ton_caption": (
+            "Spike-Anzahl pro Minute in 30-Minuten-Fenstern. Spitzen im ersten "
+            "NREM-Zyklus (typischerweise 1–3 Stunden nach Schlafbeginn) sind "
+            "charakteristisch für schlaf-aktivierte Muster wie CSWS/ESES."
+        ),
+        "ton_peak_label": "Spitze: {peak:.1f}/min bei {hours:.1f}h",
     },
 }
