@@ -25,6 +25,7 @@ class PatternCriterion:
     description: str
     check: Callable[[dict], bool]
     weight: float = 1.0
+    required: bool = False  # if True, pattern is suppressed when this criterion fails
 
 
 @dataclass
@@ -72,6 +73,7 @@ PATTERNS = [
                     1 for c in _get(f, "topography", "all_channels") or []
                     if c.get("median", 0) > 5.5
                 ) >= 4,
+                required=True,  # gate: must have multi-regional activity
             ),
             PatternCriterion(
                 "low_spindle",
@@ -120,6 +122,7 @@ PATTERNS = [
                 "sustained_long_bursts",
                 "Sustained rhythmic bursts ≥10 s present",
                 lambda f: (_get(f, "bursts", "n_bursts_10s_or_longer") or 0) >= 3,
+                required=True,  # gate: CSWS needs sustained bursts
             ),
             PatternCriterion(
                 "complex_morphology",
@@ -166,6 +169,7 @@ PATTERNS = [
                     c.get("name") in ("C3", "C4", "T3", "T4", "T5", "T6") and c.get("median", 0) > 5.5
                     for c in (_get(f, "topography", "all_channels") or [])[:5]
                 ),
+                required=True,  # gate: BECTS needs centro-temporal focus, not nothing
             ),
             PatternCriterion(
                 "simple_morphology",
@@ -175,7 +179,9 @@ PATTERNS = [
             PatternCriterion(
                 "limited_complex",
                 "Complex spike-wave morphology not dominant",
-                lambda f: (_get(f, "morphology", "pct_complex_spike_wave") or 0) < 30,
+                lambda f: (_get(f, "morphology", "pct_complex_spike_wave") or 0) < 30
+                          and (_get(f, "morphology", "pct_simple_spikes") or 0) > 0,
+                # also require non-zero simple spikes — prevents pass on missing morphology
             ),
         ],
         "questions": [
@@ -205,6 +211,7 @@ PATTERNS = [
                     c.get("name") in ("Cz", "Pz") and c.get("median", 0) > 5.5
                     for c in (_get(f, "topography", "all_channels") or [])[:3]
                 ),
+                required=True,  # gate: this pattern is defined by Cz/Pz dominance
             ),
             PatternCriterion(
                 "language_areas_quieter",
@@ -213,7 +220,10 @@ PATTERNS = [
                     c.get("median", 0) < 6
                     for c in (_get(f, "topography", "all_channels") or [])
                     if c.get("name") in ("T3", "T5", "F7")
-                ),
+                ) and len([
+                    c for c in (_get(f, "topography", "all_channels") or [])
+                    if c.get("name") in ("T3", "T5", "F7")
+                ]) > 0,  # require these channels to actually be present
             ),
         ],
         "questions": [
@@ -243,13 +253,37 @@ def _confidence_label(score: float) -> str:
 def match_patterns(findings: dict) -> list[PatternMatch]:
     """Score every defined pattern against the findings.
 
-    Returns matches with confidence ≥ 0.3, sorted by confidence descending.
+    Patterns are scored only if all their `required` criteria are met
+    (these are gating criteria — without them, the pattern doesn't apply
+    regardless of how many supporting criteria match). Among remaining
+    patterns, matches with confidence ≥ 0.3 are returned, sorted descending.
+
+    The gating mechanism prevents false-positive matches when findings
+    are partially missing or when a child's EEG is normal (where some
+    "less than" criteria like `pct_complex < 30` would otherwise trivially
+    pass on missing data).
     """
     matches: list[PatternMatch] = []
     for pattern in PATTERNS:
         criteria = pattern["criteria"]
         if not criteria:
             continue
+
+        # Pre-check all `required` (gating) criteria. If any fails, skip.
+        gating_passed = True
+        for crit in criteria:
+            if not crit.required:
+                continue
+            try:
+                ok = bool(crit.check(findings))
+            except Exception:
+                ok = False
+            if not ok:
+                gating_passed = False
+                break
+        if not gating_passed:
+            continue
+
         met = []
         unmet = []
         total_weight = 0.0
