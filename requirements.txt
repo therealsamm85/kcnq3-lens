@@ -1,0 +1,18 @@
+# Core (required)
+numpy>=1.24
+scipy>=1.10
+mne>=1.5
+streamlit>=1.30
+matplotlib>=3.7
+plotly>=5.18
+pandas>=2.0
+reportlab>=4.0
+
+# Sleep analysis (recommended — provides validated spindle detection;
+# heuristic fallback runs if not installed)
+yasa>=0.7
+
+# AI providers (optional — install only the one(s) you'll use)
+anthropic>=0.34
+openai>=1.40
+google-generativeai>=0.7
