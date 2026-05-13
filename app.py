@@ -30,6 +30,7 @@ from src.ai import (
 )
 from src.reports import build_doctor_pdf, build_parent_pdf
 from src.utils.plots import plot_topomap, plot_time_of_night
+from src.insights import build_narrative
 from src.i18n import get_translator, LANGUAGES
 
 
@@ -432,6 +433,80 @@ def _render_findings_tabs(findings: dict, key_prefix: str = ""):
         )
 
 
+def _render_insights(findings: dict, key_prefix: str = ""):
+    """Render the proactive insights section: anatomy, patterns, cross-modal."""
+    insights = build_narrative(findings)
+
+    st.subheader(T("insights_header"))
+    st.caption(T("insights_caption"))
+
+    # ── Anatomy section ─────────────────────────────────────────────────
+    st.markdown(f"### 🧠 {T('insights_anatomy_header')}")
+    st.caption(T("insights_anatomy_caption"))
+
+    region_rows = []
+    for r in insights["anatomy"]["region_descriptions"]:
+        flag = " ⚠" if r.get("artifact_prone") else ""
+        region_rows.append({
+            "Channel": r["name"] + flag,
+            "Median kurtosis": round(r["value"], 2),
+            "Brain region": r["region"],
+            "Function": r["function"],
+        })
+    if region_rows:
+        st.dataframe(pd.DataFrame(region_rows), use_container_width=True,
+                     hide_index=True)
+
+    if insights["anatomy"]["artifact_prone_warning"]:
+        st.warning(T(
+            "insights_artifact_warning",
+            channels=", ".join(insights["anatomy"]["artifact_prone_warning"]),
+        ))
+
+    # Top networks
+    st.markdown(f"#### {T('insights_top_networks_header')}")
+    for net in insights["anatomy"]["top_networks"]:
+        with st.expander(f"**{net['name']}** (mean activity: {net['score']})"):
+            st.write(f"**Anatomy:** {net.get('anatomy', '')}")
+            st.write(f"**Function:** {net.get('function', '')}")
+            if net.get("clinical_implications"):
+                st.write("**Possible clinical implications:**")
+                for impl in net["clinical_implications"]:
+                    st.write(f"- {impl}")
+
+    # ── Pattern matches ─────────────────────────────────────────────────
+    st.markdown(f"### 🔍 {T('insights_patterns_header')}")
+    st.caption(T("insights_patterns_caption"))
+
+    if not insights["patterns"]:
+        st.info(T("insights_no_patterns"))
+    else:
+        for p in insights["patterns"]:
+            conf_pct = int(p["confidence"] * 100)
+            label = p["confidence_label"]
+            color = {"strong": "🟢", "moderate": "🟡", "weak": "🟠"}.get(label, "⚪")
+            with st.expander(
+                f"{color} **{p['name']}** — {label} ({conf_pct}%)"
+            ):
+                st.markdown(p["explanation"])
+                total = len(p["criteria_met"]) + len(p["criteria_unmet"])
+                st.markdown(f"**{T('insights_pattern_criteria_met', n=len(p['criteria_met']), total=total)}**")
+                for c in p["criteria_met"]:
+                    st.markdown(f"- ✅ {c}")
+                for c in p["criteria_unmet"]:
+                    st.markdown(f"- ⬜ {c}")
+                st.markdown(f"**{T('insights_pattern_questions')}**")
+                for q in p["questions_for_doctor"]:
+                    st.markdown(f"- {q}")
+
+    # ── Cross-modal observations ────────────────────────────────────────
+    if insights["cross_modal_observations"]:
+        st.markdown(f"### 🔗 {T('insights_cross_modal_header')}")
+        st.caption(T("insights_cross_modal_caption"))
+        for o in insights["cross_modal_observations"]:
+            st.markdown(o)
+
+
 def _run_analyses_with_progress(rec, label: str = ""):
     """Run all analyses and update Streamlit progress bar."""
     wake_start_ep, wake_end_ep, sleep_start_ep, sleep_end_ep = _resolve_windows(rec)
@@ -488,7 +563,12 @@ if mode == "single":
         st.header(T("step3_header"))
         _render_findings_tabs(findings, key_prefix="single")
 
+        # Proactive insights (rule-based, no LLM)
+        st.markdown("---")
+        _render_insights(findings, key_prefix="single")
+
         # AI interpretation
+        st.markdown("---")
         st.header(T("step4_header"))
         if not api_key:
             st.info(T("ai_need_key", provider=_selected_info.display_name))

@@ -277,6 +277,43 @@ TRANSLATIONS = {
         "qc_good_channels": "Good channels",
         "qc_flagged_channels_label": "Flagged channels:",
         "qc_no_warnings": "No quality concerns detected.",
+
+        # Insights
+        "tab_insights": "🧭 Insights",
+        "insights_header": "Proactive insights",
+        "insights_caption": (
+            "Rule-based interpretation of the findings. Highlights affected "
+            "brain networks, possible clinical patterns, and cross-modal "
+            "observations. All deterministic — no AI used here."
+        ),
+        "insights_anatomy_header": "Affected brain regions",
+        "insights_anatomy_caption": (
+            "Top channels with highest epileptiform activity, mapped to "
+            "their underlying brain regions and functional networks."
+        ),
+        "insights_top_networks_header": "Top affected functional networks",
+        "insights_artifact_warning": (
+            "⚠ Note: {channels} are frontal-pole electrodes which can be "
+            "affected by eye-blink artifact. Their elevated activity should "
+            "be interpreted cautiously."
+        ),
+        "insights_patterns_header": "Possible clinical patterns",
+        "insights_patterns_caption": (
+            "Pattern matches based on combinations of findings. **These are "
+            "NOT diagnoses** — they are starting points for discussion with "
+            "your child's neurologist."
+        ),
+        "insights_pattern_criteria_met": "Criteria met ({n}/{total}):",
+        "insights_pattern_questions": "Questions worth asking the doctor:",
+        "insights_cross_modal_header": "Cross-modal observations",
+        "insights_cross_modal_caption": (
+            "Combinations of findings that imply more than each finding alone."
+        ),
+        "insights_no_patterns": (
+            "No clinical patterns matched at the moderate-confidence threshold. "
+            "This could mean the findings are within normal range, or the "
+            "pattern library doesn't yet cover this presentation."
+        ),
     },
 
     # ─── German ────────────────────────────────────────────────────────────
@@ -571,5 +608,41 @@ TRANSLATIONS = {
         "qc_good_channels": "Saubere Kanäle",
         "qc_flagged_channels_label": "Markierte Kanäle:",
         "qc_no_warnings": "Keine Qualitäts-Probleme erkannt.",
+
+        "tab_insights": "🧭 Insights",
+        "insights_header": "Proaktive Insights",
+        "insights_caption": (
+            "Regelbasierte Interpretation der Befunde. Zeigt betroffene "
+            "Hirn-Netzwerke, mögliche klinische Muster und cross-modale "
+            "Beobachtungen. Alles deterministisch — keine KI hier."
+        ),
+        "insights_anatomy_header": "Betroffene Hirnregionen",
+        "insights_anatomy_caption": (
+            "Top-Kanäle mit höchster epileptiformer Aktivität, übersetzt in "
+            "die zugrundeliegenden Hirnregionen und funktionalen Netzwerke."
+        ),
+        "insights_top_networks_header": "Hauptsächlich betroffene funktionale Netzwerke",
+        "insights_artifact_warning": (
+            "⚠ Hinweis: {channels} sind frontale Pol-Elektroden, die durch "
+            "Augenblinzeln-Artefakt beeinflusst sein können. Erhöhte Aktivität "
+            "dort sollte vorsichtig interpretiert werden."
+        ),
+        "insights_patterns_header": "Mögliche klinische Muster",
+        "insights_patterns_caption": (
+            "Muster-Matches basierend auf Befund-Kombinationen. **Das sind "
+            "KEINE Diagnosen** — sondern Ausgangspunkte für das Gespräch "
+            "mit der Neuropädiaterin / dem Neuropädiater."
+        ),
+        "insights_pattern_criteria_met": "Erfüllte Kriterien ({n}/{total}):",
+        "insights_pattern_questions": "Empfohlene Fragen an die Ärztin / den Arzt:",
+        "insights_cross_modal_header": "Cross-modale Beobachtungen",
+        "insights_cross_modal_caption": (
+            "Befund-Kombinationen, die mehr aussagen als jeder Einzel-Befund."
+        ),
+        "insights_no_patterns": (
+            "Keine klinischen Muster mit mittlerer Konfidenz erkannt. Das "
+            "kann bedeuten: Befunde im Normalbereich, oder die Muster-"
+            "Bibliothek deckt diese Konstellation noch nicht ab."
+        ),
     },
 }
