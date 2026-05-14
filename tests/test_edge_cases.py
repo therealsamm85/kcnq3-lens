@@ -372,6 +372,92 @@ except Exception as e:
     check("Doctor PDF with v0.5 metrics generates", False, str(e))
 
 
+# ─── 11. Sanitization: NaN/Inf & numpy-scalar protection ────────────────────
+section("Sanitization — NaN/Inf & numpy-type leakage")
+
+from src.utils.sanitize import safe_float, safe_int, safe_round_dict
+import json
+import math
+
+check("safe_float(NaN) returns default", safe_float(float("nan")) == 0.0)
+check("safe_float(Inf) returns default", safe_float(float("inf")) == 0.0)
+check("safe_float(None) returns default", safe_float(None) == 0.0)
+check("safe_float('abc') returns default", safe_float("abc") == 0.0)
+check("safe_float(np.float64(NaN)) returns default",
+      safe_float(np.float64("nan")) == 0.0)
+check("safe_float rounds when ndigits given",
+      safe_float(3.14159, ndigits=2) == 3.14)
+check("safe_int(NaN) returns default", safe_int(float("nan")) == 0)
+check("safe_int(np.int64(42)) returns Python int",
+      type(safe_int(np.int64(42))) is int)
+
+# Sanitize a dict containing NaN and numpy types
+dirty = {
+    "a": float("nan"),
+    "b": np.float64(1.5),
+    "c": np.int32(5),
+    "d": [float("inf"), 1.0, np.bool_(True)],
+    "e": {"nested": float("nan")},
+}
+clean = safe_round_dict(dirty)
+check("safe_round_dict replaces NaN", clean["a"] == 0.0)
+check("safe_round_dict unboxes numpy float",
+      isinstance(clean["b"], float) and not isinstance(clean["b"], np.floating))
+check("safe_round_dict unboxes numpy int",
+      isinstance(clean["c"], int) and not isinstance(clean["c"], np.integer))
+check("safe_round_dict recurses into lists", clean["d"][0] == 0.0)
+check("safe_round_dict recurses into nested dicts", clean["e"]["nested"] == 0.0)
+
+# Full pipeline guarantee: degenerate channels must not produce NaN/Inf
+np.random.seed(0)
+degenerate_data = np.zeros((19, 200 * 60 * 5), dtype=np.float32)
+degenerate_data[0:5] = np.random.randn(5, 200 * 60 * 5) * 50
+
+deg_rec = EEGRecording(
+    path=Path("/synthetic-degenerate"),
+    sfreq=200, n_channels=19, duration_s=300,
+    channel_names=["Fp1", "F4", "F3", "C4", "C3", "P4", "P3", "O2", "O1",
+                   "F8", "F7", "T4", "T3", "T6", "T5", "Fz", "Cz", "Pz", "Fp2"],
+    n_channels_in_file=19,
+    eeg_channel_indices=list(range(19)),
+    format_name="synthetic",
+)
+deg_rec._full_data = degenerate_data
+
+from src.runner import run_all_analyses
+
+try:
+    findings = run_all_analyses(
+        deg_rec, sleep_start_epoch=0, sleep_end_epoch=10,
+        wake_epoch_indices=list(range(0, 5)), age_years=5,
+    )
+    # Strict JSON serialization must succeed
+    json.dumps(findings, allow_nan=False)
+    check("Pipeline output on degenerate recording is strict-JSON-serializable",
+          True)
+except (ValueError, TypeError) as e:
+    check("Pipeline output is strict-JSON-serializable", False, str(e))
+
+# Recursive NaN/Inf scan
+def _scan_nonfinite(obj, path=""):
+    issues = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            issues.extend(_scan_nonfinite(v, f"{path}.{k}"))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            issues.extend(_scan_nonfinite(v, f"{path}[{i}]"))
+    elif isinstance(obj, float):
+        if not math.isfinite(obj):
+            issues.append(path)
+    return issues
+
+issues = _scan_nonfinite(findings)
+check("Pipeline output contains zero NaN/Inf floats",
+      len(issues) == 0,
+      f"found at: {issues[:3]}" if issues else "")
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
