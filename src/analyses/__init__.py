@@ -12,6 +12,9 @@ from .sleep_stages import compute_sleep_stages, SleepStageResult
 from .swi import compute_swi, SWIResult
 from .state_split import compute_state_split, StateSplitResult
 from .synchrony import compute_synchrony, SynchronyResult
+from .sleep_architecture import (
+    compute_sleep_architecture, SleepArchitectureResult,
+)
 
 __all__ = [
     "compute_topography", "TopographyResult",
@@ -26,4 +29,5 @@ __all__ = [
     "compute_swi", "SWIResult",
     "compute_state_split", "StateSplitResult",
     "compute_synchrony", "SynchronyResult",
+    "compute_sleep_architecture", "SleepArchitectureResult",
 ]

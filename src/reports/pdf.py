@@ -150,6 +150,19 @@ def build_doctor_pdf(
         sub_parts.append(f"Recording: {recording_label}")
     _header(story, st, title, " · ".join(sub_parts))
 
+    # ── v0.6: Clinical Impression (TOP OF REPORT) ────────────────────────
+    impression = findings.get("clinical_impression")
+    if impression:
+        story.append(Paragraph("Impression", st["h2"]))
+        story.append(Paragraph(impression, st["body"]))
+
+    # ── v0.6: Recommendations ───────────────────────────────────────────
+    recs = findings.get("clinical_recommendations") or []
+    if recs:
+        story.append(Paragraph("Recommendations / questions to discuss", st["h2"]))
+        for r in recs:
+            story.append(Paragraph(f"• {r}", st["body"]))
+
     # Section 1: Topography
     topo = findings.get("topography")
     if topo:
@@ -283,6 +296,28 @@ def build_doctor_pdf(
              f"({state.get('activation_label', '')})"),
             ("Wake minutes analyzed", str(state.get("wake_minutes", "—"))),
             ("NREM minutes analyzed", str(state.get("nrem_minutes", "—"))),
+        ]
+        story.append(_kv_table(rows))
+
+    # ─── v0.6: Sleep architecture ───────────────────────────────────────
+    arch = findings.get("sleep_architecture")
+    if arch:
+        story.append(Paragraph("Sleep architecture", st["h2"]))
+        rows = [
+            ("Total sleep time (min)", str(arch.get("total_sleep_time_minutes", "—"))),
+            ("Sleep onset (min from rec start)",
+             str(arch.get("sleep_onset_minute", "—"))),
+            ("Final awakening (min)",
+             str(arch.get("final_awakening_minute", "—"))),
+            ("REM latency (min)", str(arch.get("rem_latency_minutes", "—"))),
+            ("WASO (Wake After Sleep Onset, min)",
+             str(arch.get("waso_minutes", "—"))),
+            ("Sleep fragmentation index (transitions/hr)",
+             str(arch.get("fragmentation_index_per_hour", "—"))),
+            ("NREM cycles (complete)", str(arch.get("n_complete_cycles", "—"))),
+            ("Mean cycle duration (min)",
+             str(arch.get("mean_cycle_duration_minutes", "—"))),
+            ("First-cycle N3 (min)", str(arch.get("first_cycle_n3_minutes", "—"))),
         ]
         story.append(_kv_table(rows))
 

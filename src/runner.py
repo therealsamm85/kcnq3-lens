@@ -21,6 +21,7 @@ from .analyses import (
     compute_swi,
     compute_state_split,
     compute_synchrony,
+    compute_sleep_architecture,
 )
 from .analyses.topography import summarize_topography
 from .analyses.spindles import summarize_spindles
@@ -33,6 +34,8 @@ from .analyses.sleep_stages import summarize_sleep_stages
 from .analyses.swi import summarize_swi
 from .analyses.state_split import summarize_state_split
 from .analyses.synchrony import summarize_synchrony
+from .analyses.sleep_architecture import summarize_sleep_architecture
+from .clinical.impression import build_impression, build_recommendations
 from .utils.sanitize import safe_round_dict
 
 
@@ -183,7 +186,30 @@ def run_all_analyses(
         findings["synchrony"] = summarize_synchrony(syn)
     except Exception as e:
         errors["synchrony"] = str(e)
-    _emit("synchrony", 1.0)
+    _emit("synchrony", 0.99)
+
+    # --- 11. Sleep architecture (v0.6) — depends on sleep_stages ---
+    if sleep_stage_result is not None:
+        try:
+            arch = compute_sleep_architecture(sleep_stage_result)
+            findings["sleep_architecture"] = summarize_sleep_architecture(arch)
+        except Exception as e:
+            errors["sleep_architecture"] = str(e)
+
+    # --- 12. Clinical impression + recommendations (v0.6) ---
+    # Built from all preceding findings; deterministic, no LLM.
+    try:
+        from .insights import build_narrative
+        narrative = build_narrative(findings)
+        patterns = narrative.get("patterns", [])
+        findings["clinical_impression"] = build_impression(findings, patterns)
+        findings["clinical_recommendations"] = build_recommendations(
+            findings, patterns
+        )
+    except Exception as e:
+        errors["clinical_impression"] = str(e)
+
+    _emit("clinical", 1.0)
 
     findings["errors"] = errors
 

@@ -458,6 +458,76 @@ check("Pipeline output contains zero NaN/Inf floats",
       f"found at: {issues[:3]}" if issues else "")
 
 
+# ─── 12. v0.6 — clinical report restructure + metadata + sleep architecture ─
+section("v0.6 — Clinical report / metadata / sleep architecture")
+
+from src.clinical.metadata import RecordingMetadata, to_summary_lines
+from src.clinical.metadata import summarize as summarize_meta
+from src.clinical.impression import build_impression, build_recommendations
+from src.analyses.sleep_architecture import (
+    compute_sleep_architecture, summarize_sleep_architecture,
+)
+from src.analyses.sleep_stages import SleepStageResult
+
+# RecordingMetadata roundtrip
+meta = RecordingMetadata(
+    patient_label="Anon-001",
+    age_years=5.0,
+    variant="KCNQ3 p.Arg230His",
+    current_medications=["Sultiam 3ml BID", "Mg-L-Threonate 100mg"],
+)
+ms = summarize_meta(meta)
+check("RecordingMetadata.summarize returns full schema",
+      "patient_label" in ms and "current_medications" in ms)
+check("RecordingMetadata empty fields skipped in to_summary_lines",
+      all(v != "" for _, v in to_summary_lines(meta)))
+
+# build_impression on empty findings shouldn't crash
+imp = build_impression({})
+check("build_impression on empty findings returns text", isinstance(imp, str) and len(imp) > 0)
+
+# build_recommendations on empty findings returns at least the default
+recs = build_recommendations({})
+check("build_recommendations on empty returns default", len(recs) >= 1)
+
+# Sleep architecture on all-wake labels
+fake_all_wake = SleepStageResult(
+    epoch_labels=["W"] * 20, epoch_seconds=30,
+    confidence="fallback",
+    stage_minutes={"W": 10, "N1": 0, "N2": 0, "N3": 0, "REM": 0},
+    sleep_efficiency_pct=0, n_nrem_cycles_estimated=0,
+    channel_used="Cz", method="fallback",
+)
+try:
+    arch = compute_sleep_architecture(fake_all_wake)
+    check("sleep_architecture handles all-wake without crash",
+          arch.total_sleep_time_minutes == 0)
+    check("sleep_architecture sets None for rem_latency when no sleep",
+          arch.rem_latency_minutes is None)
+except Exception as e:
+    check("sleep_architecture handles all-wake", False, str(e))
+
+# Sleep architecture on synthetic NREM-REM pattern
+labels = ["W"] * 4 + ["N2"] * 30 + ["N3"] * 30 + ["REM"] * 10 + ["W"] * 4
+fake_with_rem = SleepStageResult(
+    epoch_labels=labels, epoch_seconds=30,
+    confidence="fallback",
+    stage_minutes={"W": 4, "N1": 0, "N2": 15, "N3": 15, "REM": 5},
+    sleep_efficiency_pct=0, n_nrem_cycles_estimated=1,
+    channel_used="Cz", method="fallback",
+)
+try:
+    arch = compute_sleep_architecture(fake_with_rem)
+    check("sleep_architecture computes REM latency",
+          arch.rem_latency_minutes is not None and arch.rem_latency_minutes > 0)
+    check("sleep_architecture counts cycles",
+          arch.n_complete_cycles >= 1)
+    check("sleep_architecture first-cycle N3 minutes > 0",
+          arch.first_cycle_n3_minutes > 0)
+except Exception as e:
+    check("sleep_architecture with REM", False, str(e))
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
