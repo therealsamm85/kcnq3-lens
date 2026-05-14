@@ -31,6 +31,7 @@ from src.ai import (
 from src.reports import build_doctor_pdf, build_parent_pdf
 from src.utils.plots import plot_topomap, plot_time_of_night
 from src.insights import build_narrative
+from src.clinical.metadata import RecordingMetadata, to_summary_lines
 from src.i18n import get_translator, LANGUAGES
 
 
@@ -94,6 +95,41 @@ variant = st.sidebar.text_input(
     placeholder=T("sidebar_variant_placeholder"),
     help=T("sidebar_variant_help"),
 )
+
+# Recording metadata (collapsed; v0.6)
+with st.sidebar.expander("📋 Recording metadata (optional)", expanded=False):
+    md_patient_label = st.text_input("Patient label", "",
+                                     help="Anonymized identifier — NOT real name/PHI",
+                                     key="md_patient_label")
+    md_recording_date = st.text_input("Recording date (YYYY-MM-DD)", "",
+                                      key="md_recording_date")
+    md_time_of_day = st.selectbox(
+        "Time of day",
+        ["", "morning", "afternoon", "overnight", "all-day"],
+        key="md_time_of_day",
+    )
+    md_indication = st.text_area(
+        "Indication / reason for recording",
+        "", height=60, key="md_indication",
+    )
+    md_meds = st.text_area(
+        "Current medications (one per line)",
+        "", height=80,
+        help="e.g. 'Sultiam 3ml BID' / 'Magnesium L-Threonate 100mg evening'",
+        key="md_meds",
+    )
+    md_med_change = st.text_input(
+        "Last medication change (YYYY-MM-DD)", "",
+        key="md_med_change",
+    )
+    md_days_seizure = st.number_input(
+        "Days since last seizure (leave 0 if none)",
+        value=0, min_value=0, key="md_days_seizure",
+    )
+    md_tech_notes = st.text_area(
+        "Technologist / clinical notes during recording",
+        "", height=60, key="md_tech_notes",
+    )
 
 st.sidebar.header(T("sidebar_windows"))
 st.sidebar.caption(T("sidebar_windows_caption"))
@@ -681,6 +717,25 @@ if mode == "single":
         # PDF reports
         st.header(T("pdf_header"))
         st.caption(T("pdf_caption"))
+
+        # Build RecordingMetadata from sidebar inputs
+        _meta = RecordingMetadata(
+            patient_label=md_patient_label.strip() or None,
+            age_years=age_years,
+            variant=variant or None,
+            recording_date=md_recording_date.strip() or None,
+            recording_time_of_day=md_time_of_day or None,
+            recording_indication=md_indication.strip() or None,
+            current_medications=[
+                m.strip() for m in md_meds.split("\n") if m.strip()
+            ],
+            last_medication_change_date=md_med_change.strip() or None,
+            days_since_last_seizure=(
+                int(md_days_seizure) if md_days_seizure > 0 else None
+            ),
+            technologist_notes=md_tech_notes.strip() or None,
+        )
+
         col_doc, col_par = st.columns(2)
         with col_doc:
             try:
@@ -688,6 +743,7 @@ if mode == "single":
                     findings,
                     age_years=age_years,
                     variant=variant or None,
+                    patient_label=_meta.patient_label,
                 )
                 st.download_button(
                     T("pdf_doctor_button"),
