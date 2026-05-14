@@ -80,6 +80,7 @@ with st.expander(T("disclaimer_header"), expanded=False):
 # ─── Sidebar: mode selector ─────────────────────────────────────────────────
 st.sidebar.header(T("sidebar_mode"))
 _MODE_LABELS = {
+    "quickstart": T("mode_quickstart"),
     "single": T("mode_single"),
     "compare": T("mode_compare"),
     "longitudinal": "🗓️ Longitudinal history",
@@ -665,9 +666,247 @@ def _run_analyses_with_progress(rec, label: str = ""):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# MODE Q: QUICK START — guided 4-step flow for first-time users
+# ═══════════════════════════════════════════════════════════════════════════
+if mode == "quickstart":
+    # Hide most sidebar complexity for first-time users
+    st.markdown("### 🎯 Quick Start — guided EEG analysis")
+    st.markdown(
+        "This flow walks you through analyzing your child's EEG in 4 steps. "
+        "Each step has a brief explanation. **No prior EEG knowledge required.**"
+    )
+    st.info(
+        "💡 **What this tool does:** It looks at your child's EEG recording and "
+        "produces numbers + plain-language observations you can take to your "
+        "child's neurologist. It does NOT diagnose anything. It surfaces "
+        "patterns; the doctor interprets."
+    )
+
+    # ── Step 1 — Child basics ────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Step 1 — About your child")
+    qs_age = st.number_input(
+        "How old is your child? (years)",
+        min_value=0.0, max_value=21.0, value=age_years, step=0.5,
+        help="Used to compare your child's numbers to age-typical ranges.",
+        key="qs_age",
+    )
+    qs_variant = st.text_input(
+        "Known genetic variant (optional)",
+        value=variant or "",
+        placeholder="e.g. KCNQ3 p.Arg230His",
+        help="If you know your child's specific gene variant, type it here. "
+              "It only affects how the AI interpretation is worded.",
+        key="qs_variant",
+    )
+
+    # ── Step 2 — Upload EEG ──────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Step 2 — Upload your child's EEG file")
+    st.caption(
+        "Supported: **.EEG** (Nihon Kohden EEG-1200A), **.edf** (most common "
+        "open format), .bdf, .vhdr, .set. The file stays on your computer — "
+        "nothing is uploaded to any server."
+    )
+    qs_uploaded = st.file_uploader(
+        "Drag your EEG file here, or click to browse",
+        type=["eeg", "edf", "bdf", "vhdr", "set"],
+        key="qs_upload",
+    )
+    qs_local_path = st.text_input(
+        "...or paste a path on this computer (if the file is very large)",
+        value="",
+        placeholder="/Users/yourname/Desktop/your_eeg.edf",
+        key="qs_local_path",
+    )
+
+    qs_rec = None
+    if qs_uploaded is not None or qs_local_path:
+        qs_source = _load_file(qs_uploaded, qs_local_path, "quickstart")
+        if qs_source is not None:
+            try:
+                with st.spinner(f"Reading {qs_source.name}..."):
+                    qs_rec = load_eeg(qs_source)
+                st.session_state["loaded_rec_for_autodetect"] = qs_rec
+                st.success(
+                    f"✅ Loaded **{qs_source.name}** — "
+                    f"{qs_rec.duration_s/3600:.1f} hours, "
+                    f"{qs_rec.n_channels} EEG channels."
+                )
+            except Exception as e:
+                st.error(f"Could not read the file: {e}")
+                qs_rec = None
+
+    # ── Step 3 — Run analysis ────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Step 3 — Analyze the recording")
+    if qs_rec is None:
+        st.info("👆 Upload a file above first.")
+    else:
+        st.caption(
+            "We will look for spikes, sleep spindles, background rhythm, "
+            "sustained bursts, spike-wave morphology, and several other "
+            "patterns. Takes 1–5 minutes depending on recording length."
+        )
+        if st.button("▶ Analyze this recording", type="primary",
+                     key="qs_run", use_container_width=True):
+            # Use the auto-detect to pick a reasonable sleep window
+            try:
+                with st.spinner("Auto-detecting sleep window..."):
+                    sw = detect_sleep_window(qs_rec)
+                qs_sleep_start = sw.sleep_start_epoch
+                qs_sleep_end = sw.sleep_end_epoch
+                qs_wake = list(range(
+                    max(0, qs_sleep_start - int(60 * 60 / 30)),
+                    qs_sleep_start,
+                ))
+                if not qs_wake:
+                    qs_wake = list(range(0, min(120, qs_rec.n_epochs // 4)))
+            except Exception:
+                qs_sleep_start = max(0, qs_rec.n_epochs // 4)
+                qs_sleep_end = min(qs_rec.n_epochs, 3 * qs_rec.n_epochs // 4)
+                qs_wake = list(range(0, qs_sleep_start))
+
+            progress = st.progress(0.0)
+            status_text = st.empty()
+
+            def _qs_cb(name: str, frac: float):
+                status_text.text(f"Running: {name} ({int(frac * 100)}%)")
+                progress.progress(frac)
+
+            qs_findings = run_all_analyses(
+                qs_rec,
+                sleep_start_epoch=qs_sleep_start,
+                sleep_end_epoch=qs_sleep_end,
+                wake_epoch_indices=qs_wake,
+                age_years=qs_age,
+                progress_callback=_qs_cb,
+            )
+            status_text.empty()
+            progress.empty()
+            st.session_state["qs_findings"] = qs_findings
+            st.session_state["qs_age"] = qs_age
+            st.session_state["qs_variant"] = qs_variant
+
+    qs_findings = st.session_state.get("qs_findings")
+
+    # ── Step 4 — Read results ────────────────────────────────────────────
+    if qs_findings:
+        st.markdown("---")
+        st.markdown("### Step 4 — What the analysis found")
+
+        # Top-of-page Impression
+        imp = qs_findings.get("clinical_impression")
+        if imp:
+            st.markdown("#### 📋 Summary")
+            st.info(imp)
+
+        # 3-card key metrics (parent-language)
+        st.markdown("#### 🔢 Key numbers")
+        c1, c2, c3 = st.columns(3)
+
+        # Card 1: Sleep spindles
+        sp = qs_findings.get("spindles", {})
+        if sp:
+            with c1:
+                norm = sp.get("age_normative_range")
+                norm_str = f"{norm[0]}–{norm[1]}" if norm else "varies"
+                interp = sp.get("interpretation", "")
+                flag = "🟢" if interp == "in" else "🟡" if interp == "mildly_slow" else "🟠"
+                st.markdown(f"**{flag} Sleep spindles**")
+                st.metric("Per minute", f"{sp.get('density_per_minute', 0):.2f}",
+                          help=f"Typical at age {qs_age:.0f}: {norm_str}/min. "
+                               "Spindles are short bursts of activity that help "
+                               "the brain consolidate learning during sleep.")
+
+        # Card 2: Background rhythm
+        bg = qs_findings.get("background", {})
+        if bg:
+            with c2:
+                norm = bg.get("age_normative_pdr")
+                norm_str = f"{norm[0]}–{norm[1]}" if norm else "varies"
+                interp = bg.get("interpretation", "")
+                flag = "🟢" if interp == "age_appropriate" else "🟡" if interp == "mildly_slow" else "🟠"
+                st.markdown(f"**{flag} Background rhythm**")
+                st.metric("Hz", f"{bg.get('posterior_dominant_rhythm_hz', 0):.1f}",
+                          help=f"Typical at age {qs_age:.0f}: {norm_str} Hz. "
+                               "The brain's resting rhythm. Slower than typical "
+                               "can indicate developmental delay or other factors.")
+
+        # Card 3: Sleep activation
+        ss_split = qs_findings.get("state_split", {})
+        if ss_split:
+            with c3:
+                af = ss_split.get("activation_factor", 0)
+                label = ss_split.get("activation_label", "")
+                flag = "🟢" if label == "none" else "🟡" if label == "mild" else "🟠"
+                st.markdown(f"**{flag} Sleep activation**")
+                st.metric("× factor", f"{af:.1f}×",
+                          help="How much more spike activity during sleep "
+                               "compared to wake. Values ≥3× indicate the "
+                               "spike pattern is sleep-activated.")
+
+        # Negative findings — what's NOT there (parents like this section)
+        neg = qs_findings.get("negative_findings") or []
+        if neg:
+            st.markdown("#### ✅ What was checked and NOT found")
+            for n in neg[:5]:
+                st.markdown(f"- {n}")
+
+        # Recommendations — what to ask the doctor
+        recs = qs_findings.get("clinical_recommendations") or []
+        if recs:
+            st.markdown("#### ❓ Questions for your child's doctor")
+            for r in recs[:5]:
+                st.markdown(f"- {r}")
+
+        # Download PDF
+        st.markdown("---")
+        st.markdown("#### 📄 Download a report to share with the doctor")
+        col_doc, col_par = st.columns(2)
+        with col_doc:
+            try:
+                pdf_doc = build_doctor_pdf(
+                    qs_findings, age_years=qs_age,
+                    variant=qs_variant or None,
+                    patient_label=None,
+                )
+                st.download_button(
+                    "📄 Doctor's version (technical)",
+                    pdf_doc, file_name="eeg-doctor-report.pdf",
+                    mime="application/pdf", use_container_width=True,
+                    key="qs_pdf_doc",
+                )
+            except Exception as e:
+                st.warning(f"PDF failed: {e}")
+        with col_par:
+            try:
+                pdf_par = build_parent_pdf(
+                    qs_findings, age_years=qs_age,
+                    variant=qs_variant or None,
+                )
+                st.download_button(
+                    "📄 Parent's version (plain language)",
+                    pdf_par, file_name="eeg-parent-report.pdf",
+                    mime="application/pdf", use_container_width=True,
+                    key="qs_pdf_par",
+                )
+            except Exception as e:
+                st.warning(f"PDF failed: {e}")
+
+        # Hint: switch to advanced for more
+        st.markdown("---")
+        st.caption(
+            "💡 Want more detail? Switch to **Single recording (advanced)** in the "
+            "sidebar to see the full set of findings, anatomical insights, "
+            "pattern matches, and optional AI interpretation."
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # MODE A: Single recording
 # ═══════════════════════════════════════════════════════════════════════════
-if mode == "single":
+elif mode == "single":
     rec = _file_uploader_section("single", "step1_header")
 
     st.header(T("step2_header"))
