@@ -314,6 +314,36 @@ TRANSLATIONS = {
             "This could mean the findings are within normal range, or the "
             "pattern library doesn't yet cover this presentation."
         ),
+
+        # v0.5: clinical-grade metrics
+        "tab_clinical": "Clinical",
+        "clinical_header": "Clinical-grade metrics (v0.5)",
+        "clinical_caption": (
+            "Numbers that clinicians specifically look for: formal SWI per "
+            "sleep stage, wake-vs-sleep activation factor, and spike spread "
+            "pattern."
+        ),
+        "swi_header": "Spike-Wave Index (per sleep stage)",
+        "swi_caption": (
+            "SWI = % of each sleep stage occupied by continuous spike-wave "
+            "activity. CSWS / ESES criterion (Tassinari): N3 SWI ≥ 85%."
+        ),
+        "swi_csws_met": "⚠ CSWS criterion is **MET** (N3 SWI ≥ {threshold}%)",
+        "swi_csws_not_met": "CSWS criterion not met.",
+        "state_split_header": "Wake vs sleep spike-rate split",
+        "state_split_caption": (
+            "Separate spike-rate calculations per state. Activation factor "
+            "(NREM/wake) ≥ 3 indicates sleep activation; ≥ 10 is dramatic."
+        ),
+        "synchrony_header": "Bilateral synchrony / spread pattern",
+        "synchrony_caption": (
+            "How each detected spike spreads across the scalp."
+        ),
+        "sleep_stages_header": "Sleep architecture",
+        "sleep_stages_caption": (
+            "Heuristic stage classification. YASA's model is trained on "
+            "adult PSG, so pediatric output is approximate."
+        ),
     },
 
     # ─── German ────────────────────────────────────────────────────────────
@@ -643,6 +673,35 @@ TRANSLATIONS = {
             "Keine klinischen Muster mit mittlerer Konfidenz erkannt. Das "
             "kann bedeuten: Befunde im Normalbereich, oder die Muster-"
             "Bibliothek deckt diese Konstellation noch nicht ab."
+        ),
+
+        "tab_clinical": "Klinik",
+        "clinical_header": "Klinische Kennzahlen (v0.5)",
+        "clinical_caption": (
+            "Zahlen, die Ärztinnen / Ärzte gezielt sehen wollen: formaler SWI "
+            "pro Schlafstadium, Wach-/Schlaf-Aktivierungsfaktor, Spike-"
+            "Ausbreitungsmuster."
+        ),
+        "swi_header": "Spike-Wave Index (pro Schlafstadium)",
+        "swi_caption": (
+            "SWI = % des Stadiums mit kontinuierlicher Spike-Wave-Aktivität. "
+            "CSWS / ESES-Kriterium (Tassinari): N3-SWI ≥ 85%."
+        ),
+        "swi_csws_met": "⚠ CSWS-Kriterium **ERFÜLLT** (N3-SWI ≥ {threshold}%)",
+        "swi_csws_not_met": "CSWS-Kriterium nicht erfüllt.",
+        "state_split_header": "Wach vs. Schlaf Spike-Raten",
+        "state_split_caption": (
+            "Getrennte Spike-Raten pro Zustand. Aktivierungsfaktor "
+            "(NREM/Wach) ≥ 3 = Schlaf-Aktivierung; ≥ 10 = dramatisch."
+        ),
+        "synchrony_header": "Bilaterale Synchronie / Ausbreitungsmuster",
+        "synchrony_caption": (
+            "Wie jeder erkannte Spike sich über die Kopfhaut ausbreitet."
+        ),
+        "sleep_stages_header": "Schlafarchitektur",
+        "sleep_stages_caption": (
+            "Heuristische Stadien-Klassifikation. YASA-Modell ist auf "
+            "Erwachsenen-PSG trainiert — pädiatrische Ausgabe näherungsweise."
         ),
     },
 }

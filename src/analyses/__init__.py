@@ -8,6 +8,10 @@ from .morphology import compute_spike_morphology, MorphologyResult
 from .time_of_night import compute_time_of_night, TimeOfNightResult
 from .sleep_onset import detect_sleep_window, SleepWindowResult
 from .quality import assess_quality, QualityResult
+from .sleep_stages import compute_sleep_stages, SleepStageResult
+from .swi import compute_swi, SWIResult
+from .state_split import compute_state_split, StateSplitResult
+from .synchrony import compute_synchrony, SynchronyResult
 
 __all__ = [
     "compute_topography", "TopographyResult",
@@ -18,4 +22,8 @@ __all__ = [
     "compute_time_of_night", "TimeOfNightResult",
     "detect_sleep_window", "SleepWindowResult",
     "assess_quality", "QualityResult",
+    "compute_sleep_stages", "SleepStageResult",
+    "compute_swi", "SWIResult",
+    "compute_state_split", "StateSplitResult",
+    "compute_synchrony", "SynchronyResult",
 ]

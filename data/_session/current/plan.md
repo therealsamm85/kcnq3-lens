@@ -1,54 +1,80 @@
-# Plan — KCNQ3-Lens
+# Plan — KCNQ3-Lens v0.5: Clinical credibility
 
 ## Objective
 
-Open-source quantitative EEG analysis tool for families and clinicians treating children with rare epilepsies (especially KCNQ3 spectrum). Provides Nihon-Kohden-EEG-1200A support no other open-source tool has, plus validated quantitative analyses with optional multi-LLM interpretation. Privacy-first (all local), multi-language (EN/DE), family-accessible.
+Close the five most-cited gaps from a pediatric neurologist's perspective on the v0.4.1 release. Make the tool credible enough that a real epileptologist would defend its output in a clinical conference.
 
-## Out of scope
+## Out of scope (deferred to v0.6+)
 
-- Cloud hosting / shared server
-- Replacing clinical EEG software (Persyst, NeuroWorks)
-- Real-time streaming analysis
-- Adult EEG (algorithms tuned for pediatric)
-- Source localization (use MNE directly)
-- General EEG viewing (use EDFbrowser)
-- Diagnostic claims / medical advice
+- Standardized clinical report restructure (Impression → Findings → Methods reorder)
+- HFO detection at high sample rates
+- Hyperventilation / photic stimulation response analysis
+- Reactivity (eyes open / eyes closed) analysis
+- Z-score / percentile visualizations
 
 ## Phases
 
-### v0.1 — Foundation [DONE]
-- Goal: working repo with NK reader + 5 analyses + Streamlit UI
-- Files: `src/readers/`, `src/analyses/`, `app.py`, README, DISCLAIMER, LICENSE
-- Exit criteria: end-to-end smoke test on Liyana's EEG passes
+### Phase 1 — Sleep stage classification
+- Goal: per-30s-epoch labels (W / N1 / N2 / N3 / REM) covering the recording
+- Owner: sonnet
+- Allowed files: `src/analyses/sleep_stages.py` (new)
+- Verification: returns same length as `rec.n_epochs`; on Liyana's recording, plausible split (≥40% NREM in sleep window)
+- Exit: `compute_sleep_stages()` returns a `SleepStageResult` with per-epoch labels
+- Implementation: wrap YASA's `SleepStaging.predict()` with NK EEG-1200A data scaled to µV
 
-### v0.2 — Multi-AI + Comparison + i18n [DONE]
-- Goal: provider abstraction, pre/post comparison, German UI
-- Files: `src/ai/providers/`, `src/comparison/`, `src/i18n/`, `app.py`, `README.de.md`
-- Exit criteria: all three providers register; comparison computes deltas; language switch works
+### Phase 2 — Formal SWI per sleep stage
+- Goal: % of each NREM stage occupied by continuous spike-wave activity, with CSWS threshold (≥85% in slow-wave sleep)
+- Owner: sonnet
+- Allowed files: `src/analyses/swi.py` (new)
+- Depends on: Phase 1 (sleep stages)
+- Verification: SWI values 0–100, CSWS flag fires only when N3-SWI ≥ 85
+- Exit: `compute_swi()` returns `SWIResult` with per-stage SWI + CSWS flag
 
-### v0.2.5 — Positioning + YASA [DONE, uncommitted]
-- Goal: README scope/comparison sections; replace heuristic spindle with YASA
-- Files: README.md, README.de.md, `src/analyses/spindles.py`, requirements.txt
-- Exit criteria: YASA is default backend; heuristic still works as fallback; smoke test passes
+### Phase 3 — Wake vs sleep spike rate split
+- Goal: separate spike-rate calculation for wake vs NREM, plus activation factor (sleep / wake)
+- Owner: sonnet
+- Allowed files: `src/analyses/state_split.py` (new) — derives from existing morphology detector
+- Depends on: Phase 1
+- Verification: wake_rate < sleep_rate on Liyana's reference recording; activation factor > 2
+- Exit: `compute_state_split()` returns rates per state + activation factor
 
-### v0.3 — Clinic-ready features ← **NEXT**
-- Goal: PDF reports, time-of-night chart, topographic scalp maps, auto-sleep-onset, QC flags
-- Owner model: sonnet (mechanical UI + reporting work)
-- Allowed files: `src/reports/`, `src/analyses/qc.py`, `src/utils/plots.py`, `app.py`
-- Forbidden files: existing analysis modules (audit them in parallel, don't modify)
-- Verification: end-to-end test still passes; PDF generates on Liyana's findings; topographic plot renders
-- Exit criteria: doctor sees a printable PDF; time-of-night chart shows the 00:00-01:30 spike-burden peak
+### Phase 4 — Bilateral synchrony / spread analysis
+- Goal: for each detected spike, classify spread pattern (focal / regional / bilateral synchronous / bilateral asynchronous)
+- Owner: sonnet
+- Allowed files: `src/analyses/synchrony.py` (new)
+- Verification: returns distribution of spread categories; on Liyana's data, multi-regional spread should dominate
+- Exit: `compute_synchrony()` returns `SynchronyResult` with category percentages
 
-### v0.3-audit — Validate remaining 4 analyses ← **PARALLEL TO v0.3**
-- Goal: cross-check topography, background, bursts, morphology against alternative implementations
-- Owner model: sonnet
-- Allowed files: new files under `tests/audit_*.py` only — must NOT modify analyses yet
-- Verification: each audit script runs and produces a comparison report
-- Exit criteria: each analysis has a documented "validated within X% of [alternative]" or "needs revision because Y"
+### Phase 5 — Sample EEG traces in PDF
+- Goal: render multi-channel 10-second EEG plots for the most clinically important events
+- Owner: sonnet
+- Allowed files: `src/utils/plots.py` (extend), `src/reports/pdf.py` (extend)
+- Implementation: matplotlib stack plot of 19 channels around event center; embed as image in PDF
+- Verification: PDF generates with sample-trace images; image bytes > 5 KB each
+- Exit: doctor PDF includes 3 sample traces (top burst, sample spindle, wake background)
 
-### v0.4 — Longitudinal tracker + symptom diary [PLANNED]
-- Goal: families log multiple recordings + development notes over time
-- Files: `src/storage/`, new Streamlit page
+### Phase 6 — Methods section in PDF
+- Goal: explicit algorithm + parameter documentation in the PDF, with software version + analysis timestamp + file hash
+- Owner: sonnet
+- Allowed files: `src/reports/pdf.py` (extend), `src/__init__.py` (version)
+- Verification: PDF contains a Methods section listing each analysis's algorithm and key parameters
+- Exit: methods section visible in both doctor and parent PDFs
 
-### v0.5 — Researcher CLI + batch mode [PLANNED]
-- Goal: command-line batch processing with reproducibility (config hashes)
+### Phase 7 — Hardening + tests
+- Goal: regression-tested integration
+- Owner: sonnet
+- Allowed files: `tests/test_edge_cases.py` (extend), `tests/test_end_to_end.py` (extend)
+- Verification: all tests pass; Streamlit boots clean
+- Exit: commit v0.5
+
+## Naming
+
+- All new analyses follow the existing pattern: `compute_<name>()` returns `<Name>Result` dataclass + `summarize_<name>()` returns dict.
+- New files in `src/analyses/` registered in `src/analyses/__init__.py`.
+- Runner integrates new analyses preserving error-resilience (per-analysis try/except).
+
+## Risk register
+
+- **YASA sleep staging is trained on adult PSG** — may misclassify pediatric stages. Mitigation: still ship, mark `confidence='heuristic'`, document caveat.
+- **Synchrony depends on accurate single-spike detection** — if morphology over-counts (as it did pre-v0.3), synchrony stats become meaningless. Mitigation: reuse the validated per-epoch local-MAD detector from morphology.py.
+- **Sample traces double the PDF size** — image embedding adds ~30 KB per plot. Mitigation: PNG with 80 DPI, ≤3 traces total.

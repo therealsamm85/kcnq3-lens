@@ -251,8 +251,9 @@ def _resolve_windows(rec):
 
 def _render_findings_tabs(findings: dict, key_prefix: str = ""):
     """Render per-analysis tabs for one findings dict."""
-    tab_qc, tab_topo, tab_spindle, tab_bg, tab_burst, tab_morph, tab_ton, tab_raw = st.tabs([
-        T("tab_quality"),
+    (tab_qc, tab_clinical, tab_topo, tab_spindle, tab_bg, tab_burst,
+     tab_morph, tab_ton, tab_raw) = st.tabs([
+        T("tab_quality"), T("tab_clinical"),
         T("tab_topography"), T("tab_spindles"), T("tab_background"),
         T("tab_bursts"), T("tab_morphology"), T("tab_time_of_night"), T("tab_raw"),
     ])
@@ -280,6 +281,79 @@ def _render_findings_tabs(findings: dict, key_prefix: str = ""):
                     st.warning(w)
             else:
                 st.success(T("qc_no_warnings"))
+
+    with tab_clinical:
+        st.subheader(T("clinical_header"))
+        st.caption(T("clinical_caption"))
+
+        # SWI per stage
+        swi = findings.get("swi", {})
+        if swi:
+            st.markdown(f"### {T('swi_header')}")
+            st.caption(T("swi_caption"))
+            stage_data = swi.get("swi_per_stage_pct", {})
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("Wake", f"{stage_data.get('W', 0):.0f}%")
+            col2.metric("N1", f"{stage_data.get('N1', 0):.0f}%")
+            col3.metric("N2", f"{stage_data.get('N2', 0):.0f}%")
+            col4.metric("N3", f"{stage_data.get('N3', 0):.0f}%",
+                        help="Deep NREM — clinically most relevant for CSWS")
+            col5.metric("REM", f"{stage_data.get('REM', 0):.0f}%")
+            if swi.get("csws_criterion_met"):
+                st.error(T("swi_csws_met",
+                            threshold=int(swi.get("csws_threshold_pct", 85))))
+            else:
+                st.info(T("swi_csws_not_met"))
+
+        # State split
+        state = findings.get("state_split", {})
+        if state:
+            st.markdown(f"### {T('state_split_header')}")
+            st.caption(T("state_split_caption"))
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Wake (/min)", f"{state.get('wake_rate_per_min', 0):.1f}")
+            col2.metric("NREM (/min)", f"{state.get('nrem_rate_per_min', 0):.1f}")
+            col3.metric("REM (/min)", f"{state.get('rem_rate_per_min', 0):.1f}")
+            af = state.get("activation_factor", 0)
+            col4.metric("Activation", f"{af:.1f}×",
+                        delta=state.get("activation_label", ""))
+
+        # Synchrony
+        syn = findings.get("synchrony", {})
+        if syn and syn.get("n_events_analyzed", 0) > 0:
+            st.markdown(f"### {T('synchrony_header')}")
+            st.caption(T("synchrony_caption"))
+            df_syn = pd.DataFrame({
+                "Pattern": ["Focal", "Regional", "Bilateral sync",
+                            "Bilateral async", "Generalized"],
+                "% of events": [
+                    syn.get("focal_pct", 0), syn.get("regional_pct", 0),
+                    syn.get("bilateral_synchronous_pct", 0),
+                    syn.get("bilateral_asynchronous_pct", 0),
+                    syn.get("generalized_pct", 0),
+                ],
+            })
+            st.bar_chart(df_syn.set_index("Pattern"))
+            st.write(f"**Dominant pattern:** "
+                     f"{syn.get('dominant_pattern', '').replace('_', ' ')}")
+
+        # Sleep architecture
+        sleep_st = findings.get("sleep_stages", {})
+        if sleep_st:
+            st.markdown(f"### {T('sleep_stages_header')}")
+            st.caption(T("sleep_stages_caption"))
+            sm = sleep_st.get("stage_minutes", {})
+            df_st = pd.DataFrame({
+                "Stage": list(sm.keys()),
+                "Minutes": list(sm.values()),
+            })
+            st.bar_chart(df_st.set_index("Stage"))
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Sleep efficiency",
+                        f"{sleep_st.get('sleep_efficiency_pct', 0):.0f}%")
+            col2.metric("NREM cycles (est.)",
+                        str(sleep_st.get("n_nrem_cycles_estimated", "—")))
+            col3.metric("Method", sleep_st.get("method", "—"))
 
     with tab_topo:
         t = findings.get("topography", {})

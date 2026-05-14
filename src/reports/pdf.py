@@ -4,6 +4,14 @@ Both reports are built from the same `findings` dict produced by
 `src.runner.run_all_analyses`. The doctor version is dense and quantitative;
 the parent version emphasizes plain language and the questions worth asking.
 
+v0.5 additions:
+- SWI per sleep stage (with CSWS threshold check)
+- Wake / NREM / REM spike-rate split with activation factor
+- Bilateral synchrony / spread pattern
+- Methods section with software version, analysis timestamp,
+  algorithm parameters
+- Optional sample EEG traces (passed in by caller as PNG bytes)
+
 Uses reportlab (pure Python, no external binaries). Output is a single
 in-memory bytes object that Streamlit can stream as a download.
 """
@@ -13,6 +21,11 @@ from __future__ import annotations
 import io
 from datetime import datetime
 from typing import Any
+
+try:
+    from src import __version__ as _VERSION
+except Exception:
+    _VERSION = "0.5.0"
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -108,8 +121,13 @@ def build_doctor_pdf(
     variant: str | None = None,
     patient_label: str | None = None,
     recording_label: str | None = None,
+    sample_traces: list[tuple[str, bytes]] | None = None,
 ) -> bytes:
-    """Generate a dense, technical PDF for clinicians."""
+    """Generate a dense, technical PDF for clinicians.
+
+    sample_traces : list of (caption, png_bytes)
+        Optional EEG sample-trace images embedded in the PDF.
+    """
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
@@ -233,6 +251,124 @@ def build_doctor_pdf(
         ]
         story.append(_kv_table(rows))
 
+    # ─── v0.5: SWI per sleep stage ──────────────────────────────────────
+    swi = findings.get("swi")
+    if swi:
+        story.append(Paragraph("Spike-Wave Index (formal, per stage)", st["h2"]))
+        rows = [
+            ("Channel", swi.get("channel", "?")),
+            ("SWI N1 (%)", str(swi.get("swi_per_stage_pct", {}).get("N1", "—"))),
+            ("SWI N2 (%)", str(swi.get("swi_per_stage_pct", {}).get("N2", "—"))),
+            ("SWI N3 (%)", str(swi.get("swi_per_stage_pct", {}).get("N3", "—"))),
+            ("SWI REM (%)", str(swi.get("swi_per_stage_pct", {}).get("REM", "—"))),
+            ("SWI Wake (%)", str(swi.get("swi_per_stage_pct", {}).get("W", "—"))),
+            ("SWI NREM combined (%)", str(swi.get("swi_nrem_combined_pct", "—"))),
+            ("CSWS criterion (N3 ≥ {}%)".format(
+                int(swi.get("csws_threshold_pct", 85))),
+                "MET" if swi.get("csws_criterion_met") else "not met"),
+        ]
+        story.append(_kv_table(rows))
+
+    # ─── v0.5: Wake / NREM / REM spike rates ────────────────────────────
+    state = findings.get("state_split")
+    if state:
+        story.append(Paragraph("Wake vs sleep spike rate", st["h2"]))
+        rows = [
+            ("Channel", state.get("channel", "?")),
+            ("Wake spike rate (/min)", str(state.get("wake_rate_per_min", "—"))),
+            ("NREM spike rate (/min)", str(state.get("nrem_rate_per_min", "—"))),
+            ("REM spike rate (/min)", str(state.get("rem_rate_per_min", "—"))),
+            ("Activation factor (NREM / Wake)",
+             f"{state.get('activation_factor', 0):.1f}× "
+             f"({state.get('activation_label', '')})"),
+            ("Wake minutes analyzed", str(state.get("wake_minutes", "—"))),
+            ("NREM minutes analyzed", str(state.get("nrem_minutes", "—"))),
+        ]
+        story.append(_kv_table(rows))
+
+    # ─── v0.5: Synchrony / spread pattern ───────────────────────────────
+    syn = findings.get("synchrony")
+    if syn:
+        story.append(Paragraph("Bilateral synchrony / spread pattern", st["h2"]))
+        rows = [
+            ("Events analyzed", str(syn.get("n_events_analyzed", "—"))),
+            ("Dominant pattern", syn.get("dominant_pattern", "—")),
+            ("Focal (%)", str(syn.get("focal_pct", "—"))),
+            ("Regional (%)", str(syn.get("regional_pct", "—"))),
+            ("Bilateral synchronous (%)",
+             str(syn.get("bilateral_synchronous_pct", "—"))),
+            ("Bilateral asynchronous (%)",
+             str(syn.get("bilateral_asynchronous_pct", "—"))),
+            ("Generalized (%)", str(syn.get("generalized_pct", "—"))),
+            ("Median channels per event",
+             str(syn.get("median_channels_per_event", "—"))),
+        ]
+        story.append(_kv_table(rows))
+
+    # ─── v0.5: Sample traces ─────────────────────────────────────────────
+    if sample_traces:
+        from reportlab.platypus import Image as RLImage
+        story.append(Paragraph("Sample EEG traces", st["h2"]))
+        for caption, png_bytes in sample_traces:
+            try:
+                story.append(Paragraph(f"<b>{caption}</b>", st["body"]))
+                img = RLImage(io.BytesIO(png_bytes), width=16 * cm, height=8 * cm)
+                story.append(img)
+                story.append(Spacer(1, 0.3 * cm))
+            except Exception:
+                # skip silently — partial PDF better than crash
+                pass
+
+    # ─── v0.5: Methods section ───────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph("Methods", st["h2"]))
+    methods_text = (
+        f"<b>Software:</b> KCNQ3-Lens v{_VERSION} · "
+        f"Analysis run: {datetime.now().strftime('%Y-%m-%d %H:%M')}<br/><br/>"
+        "<b>Topography:</b> Per-channel kurtosis (Fisher=False) on 1–35 Hz "
+        "bandpassed signal, per 30-second epoch.<br/><br/>"
+        "<b>Sleep spindles:</b> YASA SleepStaging spindle detector "
+        "(Lacourse 2019) when installed — three-criteria gate "
+        "(correlation 0.65, relative power 0.20, RMS 1.5). Heuristic "
+        "envelope-percentile detector as fallback.<br/><br/>"
+        "<b>Background power:</b> Welch PSD on posterior channels "
+        "(O1/O2/P3/P4/Pz averaged), 0.5 Hz HP + 40 Hz LP. Posterior "
+        "dominant rhythm = peak in 4–13 Hz band on the wake epochs.<br/><br/>"
+        "<b>Sustained bursts:</b> 5–25 Hz bandpass envelope on Pz, "
+        "MAD-based threshold (4×MAD), minimum duration 3 s. Channel "
+        "involvement: adaptive per-channel baseline (median peak-to-peak "
+        "across 2-second tiles), channel counted as involved if "
+        "burst-window peak-to-peak > 3× its baseline.<br/><br/>"
+        "<b>Spike morphology:</b> Per-30s-epoch local MAD threshold "
+        "(6×MAD ∪ 3×local RMS) on 10–30 Hz signal. FWHM measured on "
+        "broadband 1–35 Hz signal. Classification: <70 ms = simple "
+        "spike, 70–200 ms = sharp wave, ≥200 ms = complex spike-wave.<br/><br/>"
+        "<b>SWI:</b> Same spike detector as morphology. Continuous SW "
+        "burst = ≥1 spike/s sustained ≥3 s within an epoch. SWI per "
+        "stage = total SW-burst time / total stage time × 100. CSWS "
+        "criterion: N3 SWI ≥ 85% (Tassinari).<br/><br/>"
+        "<b>State split:</b> Spike rates separately for wake / NREM / "
+        "REM using sleep-stage labels. Activation factor = NREM-rate "
+        "/ wake-rate, with wake-rate floor of 0.1 /min to avoid "
+        "division by ~zero.<br/><br/>"
+        "<b>Synchrony:</b> For each spike on the primary channel, "
+        "channels with peak amplitude > 4×MAD within ±50 ms are "
+        "counted as involved. Patterns: focal (1–2 ch), regional "
+        "(3–5 ch same hemisphere), bilateral synchronous (homologous "
+        "L+R pairs with balanced count), bilateral asynchronous (both "
+        "sides, no balanced pairs), generalized (≥10 ch).<br/><br/>"
+        "<b>Sleep stages:</b> YASA SleepStaging when installed (note: "
+        "trained on adult PSG — pediatric output is heuristic). "
+        "Fallback: delta/alpha ratio thresholding with 3-state output "
+        "(W / N1 / N2).<br/><br/>"
+        "<b>Reference ranges:</b> Spindle density Wamsley 2012 (age 4-6: "
+        "3-5/min). PDR ranges Hagne 1972, Niedermeyer 2005. CSWS "
+        "threshold Tassinari 1971.<br/><br/>"
+        "<b>Quality grade:</b> A ≥ 80% usable + ≥15 good channels; "
+        "B ≥ 65% + ≥12; C ≥ 50% + ≥8; otherwise D."
+    )
+    story.append(Paragraph(methods_text, st["small"]))
+
     _disclaimer(story, st, "doctor")
     doc.build(story)
     return buf.getvalue()
@@ -320,6 +456,43 @@ def build_parent_pdf(
         summary_rows.append([
             "Strongest activity location",
             tops_str,
+        ])
+
+    # v0.5 additions: SWI and activation factor in plain language
+    swi = findings.get("swi")
+    if swi:
+        n3 = swi.get("swi_per_stage_pct", {}).get("N3", 0)
+        flag = ""
+        if swi.get("csws_criterion_met"):
+            flag = "⚠ CSWS criterion met"
+        elif n3 > 50:
+            flag = "⚠ high"
+        elif n3 > 25:
+            flag = "moderate"
+        summary_rows.append([
+            "Spike-wave during deep sleep (SWI N3)",
+            f"{n3:.0f}% of deep sleep affected {flag}",
+        ])
+
+    state = findings.get("state_split")
+    if state:
+        factor = state.get("activation_factor", 0)
+        label = state.get("activation_label", "")
+        flag = ""
+        if label == "strong":
+            flag = "⚠ strong"
+        elif label == "moderate":
+            flag = "moderate"
+        summary_rows.append([
+            "Sleep activation factor",
+            f"{factor:.1f}× more spikes during sleep than awake {flag}",
+        ])
+
+    syn = findings.get("synchrony")
+    if syn:
+        summary_rows.append([
+            "Spike spread pattern",
+            f"Most are {syn.get('dominant_pattern', '?').replace('_', ' ')}",
         ])
 
     if summary_rows:
