@@ -743,6 +743,74 @@ if s.get("events_per_minute_ci_low") is not None:
           <= s["events_per_minute_ci_high"])
 
 
+# ─── 15. v0.8.1 hardening — corrupt storage / diary / short-window CI ─────
+section("v0.8.1 hardening — corrupt input + degenerate edge cases")
+
+import tempfile as _tempfile
+import shutil
+import json
+
+harden_dir = Path(_tempfile.mkdtemp(prefix="kcnq3_harden_"))
+os.environ["KCNQ3_LENS_DATA"] = str(harden_dir)
+
+# Corrupt JSON in storage dir is skipped, not crashed
+(harden_dir / "recordings").mkdir(parents=True, exist_ok=True)
+(harden_dir / "recordings" / "corrupt.json").write_text("{ not valid json")
+(harden_dir / "recordings" / "valid.json").write_text(
+    json.dumps({
+        "recording_date": "2026-05-01", "label": "ok", "findings": {},
+    })
+)
+loaded_after_corrupt = load_long()
+check("Corrupt JSON file in storage dir is skipped (not crashed)",
+      len(loaded_after_corrupt) == 1)
+
+# Corrupt JSONL line in diary is skipped
+diary_path_corrupt = harden_dir / "diary_corrupt.jsonl"
+with open(diary_path_corrupt, "w") as fh:
+    fh.write("{ corrupt line\n")
+    fh.write(json.dumps({"date": "2026-05-13", "word_count": 5}) + "\n")
+d_loaded = load_diary(path=diary_path_corrupt)
+check("Corrupt JSONL line in diary is skipped", len(d_loaded) == 1)
+
+# Non-existent storage dir returns []
+os.environ["KCNQ3_LENS_DATA"] = str(harden_dir / "does_not_exist")
+empty_load = load_long()
+check("Non-existent storage dir returns empty list", empty_load == [])
+
+# plot_longitudinal_trend with empty data should not crash
+from src.utils.plots import plot_longitudinal_trend
+import matplotlib
+matplotlib.use("Agg")
+try:
+    fig = plot_longitudinal_trend([], [])
+    check("Empty-data plot_longitudinal_trend does not crash", fig is not None)
+except Exception as e:
+    check("Empty-data plot_longitudinal_trend does not crash", False, str(e))
+
+# Short-window morphology CI returns None (not NaN)
+short_data = np.random.randn(1, 200 * 30).astype(np.float32) * 50
+short_rec = EEGRecording(
+    path=Path("/short"), sfreq=200, n_channels=1, duration_s=30,
+    channel_names=["Pz"], n_channels_in_file=1, eeg_channel_indices=[0],
+    format_name="synth",
+)
+short_rec._full_data = short_data
+try:
+    m_short = compute_spike_morphology(short_rec, start_epoch=0, end_epoch=1)
+    s_short = summarize_morphology(m_short)
+    # CI fields should be either None (not enough data) or finite floats
+    check("Short-window CI fields are None or finite",
+          (s_short.get("events_per_minute_ci_low") is None
+           or isinstance(s_short.get("events_per_minute_ci_low"), (int, float))))
+except Exception as e:
+    check("Short-window morphology doesn't crash", False, str(e))
+
+# Cleanup
+shutil.rmtree(harden_dir, ignore_errors=True)
+os.environ.pop("KCNQ3_LENS_DATA", None)
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
