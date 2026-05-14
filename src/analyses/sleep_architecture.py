@@ -96,32 +96,48 @@ def compute_sleep_architecture(
     duration_hours = len(sleep_period) * epoch_min / 60.0
     frag_idx = transitions / duration_hours if duration_hours > 0 else 0.0
 
-    # NREM cycles: a cycle = sustained NREM (>= 15 min) followed by REM (>= 5 min)
+    # NREM cycles: a cycle = sustained NREM (>= 15 min) followed by REM (>= 5 min).
+    # Walk through the sleep period; only count a cycle when we cross from a
+    # qualified NREM block into a qualified REM block, then skip past that
+    # REM block before considering the next cycle (prevents counting micro-
+    # transitions inside one cycle as multiple cycles).
     cycles_complete = 0
     cycle_starts: list[int] = []
-    in_nrem_block_start = None
+    i = 0
     nrem_block_min = 0.0
-    for i, lab in enumerate(sleep_period):
+    in_nrem_block_start: int | None = None
+    while i < len(sleep_period):
+        lab = sleep_period[i]
         if lab in NREM_STAGES:
             if in_nrem_block_start is None:
                 in_nrem_block_start = i
             nrem_block_min += epoch_min
+            i += 1
         elif lab == "REM":
             if in_nrem_block_start is not None and nrem_block_min >= 15:
-                # Count cycle if REM block also >= 5 min — look ahead
-                rem_run = 0
+                # Measure REM block length
                 j = i
+                rem_run_min = 0.0
                 while j < len(sleep_period) and sleep_period[j] == "REM":
-                    rem_run += epoch_min
+                    rem_run_min += epoch_min
                     j += 1
-                if rem_run >= 5:
+                if rem_run_min >= 5:
                     cycles_complete += 1
                     cycle_starts.append(in_nrem_block_start)
-            in_nrem_block_start = None
-            nrem_block_min = 0.0
-        elif lab == "W":
-            # interrupts a cycle — reset NREM-block tracking but don't break cycle
-            pass
+                # Skip past the REM block whether or not it qualified, and
+                # restart NREM-block tracking from the post-REM index.
+                i = j
+                in_nrem_block_start = None
+                nrem_block_min = 0.0
+            else:
+                # REM without a qualified preceding NREM block — skip ahead
+                while i < len(sleep_period) and sleep_period[i] == "REM":
+                    i += 1
+                in_nrem_block_start = None
+                nrem_block_min = 0.0
+        else:
+            # Wake or unknown: do not break NREM block but advance
+            i += 1
 
     mean_cycle_min = None
     if cycles_complete >= 2:

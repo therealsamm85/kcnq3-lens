@@ -30,6 +30,24 @@
 **Alternatives considered:** Default German (rejected — international contributor friction); gettext-based i18n (rejected — overkill for <200 strings).
 **Reversibility:** Reversible by renaming default language and re-pointing fallback.
 
+## 2026-05-14 — Bootstrap CI on rates instead of point-estimate only
+**Decision:** Spike rate (morphology) reports point estimate + 95% CI low/high. Per-epoch resampling, 500 bootstraps.
+**Why:** Clinicians prefer reported uncertainty over false precision. A single "19.5/min" hides the fact that under different threshold choices the number ranges 17–22. Honest reporting builds clinical trust.
+**Alternatives considered:** Parametric CI (Poisson-based) — rejected because spike counts are over-dispersed; bootstrap is distribution-free. Reporting threshold-sensitivity range instead — rejected because bootstrap is the standard.
+**Reversibility:** Reversible by removing the CI fields. Default ndigits in summary still rounds to 1 decimal, so output looks the same if CI fields are absent.
+
+## 2026-05-14 — Longitudinal storage is local-only with env override
+**Decision:** Default storage at `~/.kcnq3-lens/recordings/` and `~/.kcnq3-lens/diary.jsonl`. `KCNQ3_LENS_DATA` env var overrides for testing/multi-user.
+**Why:** Same privacy logic as the main tool — medical data stays on the user's machine. JSON for recordings (one file per recording, easy to inspect/delete). JSONL for diary (one entry per line, append-only, edit-friendly).
+**Alternatives considered:** SQLite — rejected, too heavy for a 50-recording case. Cloud storage — explicit non-goal.
+**Reversibility:** Reversible. File format is JSON; migrating to another backend is a one-week refactor.
+
+## 2026-05-14 — Impression-first PDF ordering
+**Decision:** Doctor PDF now opens with Impression + Recommendations, then findings tables, then Methods + Citations.
+**Why:** Real clinicians read top-down. Impression in 10 seconds, scan findings for verification, methods only if challenging the math. The old "all findings then maybe impression at end" was researcher-style.
+**Alternatives considered:** Two-page version (one summary, one details) — rejected, multi-page PDFs are awkward in mobile reading. Side-by-side layout — rejected, doesn't print clean.
+**Reversibility:** Reversible by re-ordering the story list in `build_doctor_pdf()`.
+
 ## 2026-05-13 — README scope section is non-negotiable
 **Decision:** README must explicitly state minimum recording requirements, what the tool is NOT for, and a comparison table with other EEG tools (MNE, YASA, EDFbrowser, Persyst, etc.).
 **Why:** Without explicit scope, users will apply the tool to unsuitable recordings (adult EEG, too-short recordings, wrong sample rate) and get misleading results. The "what we are NOT" section is what prevents the tool from being a black box that families over-trust. The comparison table credits prior art and prevents reinvention claims.

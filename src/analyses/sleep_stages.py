@@ -94,6 +94,8 @@ def compute_sleep_stages(
     epoch_seconds: float = 30.0,
     target_amplitude_uv: float = 20.0,
     method: str = "auto",
+    age_years: float | None = None,
+    male: bool | None = None,
 ) -> SleepStageResult:
     """Classify each 30s epoch as W/N1/N2/N3/REM.
 
@@ -105,6 +107,9 @@ def compute_sleep_stages(
         Signal scaling target for YASA (its model assumes µV-range input).
     method : str
         'auto' (YASA if installed, else fallback), 'yasa', or 'fallback'.
+    age_years, male : optional patient metadata
+        Required by YASA's predict() method. Without them YASA raises
+        TypeError; the wrapper falls back gracefully.
     """
     if method == "auto":
         method = "yasa" if _yasa_available() else "fallback"
@@ -124,7 +129,10 @@ def compute_sleep_stages(
 
     if method == "yasa" and _yasa_available():
         try:
-            labels = _stage_with_yasa(rec, ch_idx, epoch_seconds, target_amplitude_uv)
+            labels = _stage_with_yasa(
+                rec, ch_idx, epoch_seconds, target_amplitude_uv,
+                age_years=age_years, male=male,
+            )
             return _build_result(labels, epoch_seconds, "heuristic", ch_name, "yasa")
         except Exception:
             # If YASA fails for any reason (model load, data issues), fall back
@@ -139,11 +147,15 @@ def _stage_with_yasa(
     ch_idx: int,
     epoch_seconds: float,
     target_amplitude_uv: float,
+    age_years: float | None = None,
+    male: bool | None = None,
 ) -> list[str]:
     """Run YASA.SleepStaging on a central channel.
 
     Builds an MNE Raw object from the EEG channel only (no EOG/EMG), scaled
     to µV. YASA accepts this minimal configuration with reduced confidence.
+    Newer YASA versions return a Hypnogram object; we extract the per-epoch
+    label series from .hypno.
     """
     import mne
     import yasa
@@ -165,12 +177,36 @@ def _stage_with_yasa(
     )
     raw = mne.io.RawArray(x_v[np.newaxis, :], info, verbose=False)
 
+    # YASA requires age. Default to 5y (pediatric) if not provided —
+    # KCNQ3-Lens is a pediatric tool.
+    if age_years is None:
+        age_years = 5
+    if male is None:
+        male = False
+
     sls = yasa.SleepStaging(
         raw, eeg_name="EEG", eog_name=None, emg_name=None,
-        metadata=dict(age=None, male=None),
+        metadata=dict(age=int(age_years), male=bool(male)),
     )
-    predictions = sls.predict()
-    return list(predictions)
+    result = sls.predict()
+
+    # Newer YASA returns a Hypnogram object with a pandas Series at .hypno
+    # whose values are 'WAKE' / 'N1' / 'N2' / 'N3' / 'REM' / 'ART' / 'UNS'.
+    # Older YASA returned a numpy array of strings directly.
+    if hasattr(result, "hypno"):
+        raw_labels = list(result.hypno)
+    else:
+        raw_labels = list(result)
+
+    # Normalize to our 'W' / 'N1' / 'N2' / 'N3' / 'REM' vocabulary
+    mapping = {
+        "WAKE": "W", "W": "W",
+        "N1": "N1", "N2": "N2", "N3": "N3",
+        "REM": "REM", "R": "REM",
+        "ART": "W",  # artifact epochs treated as not-sleep
+        "UNS": "W",  # unscored treated as not-sleep
+    }
+    return [mapping.get(str(lab), "W") for lab in raw_labels]
 
 
 def _build_result(
