@@ -846,6 +846,52 @@ check(
 )
 
 
+# ─── 17. v0.10 — plot_eeg_trace_with_events empty-window fallback ──────────
+section("v0.10 — EEG trace viewer empty-window guard")
+
+from src.utils.plots import plot_eeg_trace_with_events
+import matplotlib
+matplotlib.use("Agg")
+
+# Empty data
+try:
+    fig = plot_eeg_trace_with_events(
+        data=np.zeros((19, 0), dtype=np.float32),
+        channel_names=["Fp1"] * 19,
+        sfreq=200, window_start_s=0, duration_s=10,
+    )
+    check("plot_eeg_trace_with_events on empty-window data returns a placeholder figure",
+          fig is not None)
+except Exception as e:
+    check("plot_eeg_trace_with_events on empty-window doesn't crash", False, str(e))
+
+# Window beyond data length
+try:
+    fig = plot_eeg_trace_with_events(
+        data=np.random.randn(19, 200 * 30).astype(np.float32),
+        channel_names=["C" + str(i) for i in range(19)],
+        sfreq=200, window_start_s=10000, duration_s=10,
+    )
+    check("plot_eeg_trace_with_events with out-of-range window returns placeholder",
+          fig is not None)
+except Exception as e:
+    check("plot_eeg_trace_with_events out-of-range window", False, str(e))
+
+# Normal usage with events
+try:
+    fig = plot_eeg_trace_with_events(
+        data=np.random.randn(19, 200 * 30).astype(np.float32),
+        channel_names=["Ch" + str(i) for i in range(19)],
+        sfreq=200, window_start_s=5, duration_s=10,
+        events=[{"start_s": 8, "duration_s": 2, "label": "test event"}],
+        highlight_channel="Ch5",
+    )
+    check("plot_eeg_trace_with_events with events + highlight renders",
+          fig is not None)
+except Exception as e:
+    check("plot_eeg_trace_with_events with events", False, str(e))
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
