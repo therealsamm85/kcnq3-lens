@@ -723,6 +723,33 @@ if mode == "quickstart":
         key="qs_local_path",
     )
 
+    # 🎬 Try-with-sample-data button (v0.11)
+    st.caption(
+        "**Or try with sample data** — a public pediatric EEG from PhysioNet's "
+        "CHB-MIT database (~40 MB, female age 11, 1 hour, 23 channels). "
+        "First download caches locally; subsequent runs are instant."
+    )
+    if st.button("🎬 Use sample data (CHB-MIT chb01_01.edf)",
+                 key="qs_sample_btn"):
+        try:
+            from scripts.download_sample_data import (
+                download_sample, sample_path, is_cached,
+            )
+            if is_cached():
+                st.success(f"✅ Sample already cached at {sample_path()}")
+            else:
+                with st.spinner("Downloading ~40 MB from PhysioNet..."):
+                    download_sample(verbose=False)
+                st.success(f"✅ Downloaded to {sample_path()}")
+            # Auto-populate the path field for the next step
+            st.session_state["qs_local_path_default"] = str(sample_path())
+            st.info(
+                "👇 Now paste this path into the field above to load the sample: "
+                f"`{sample_path()}`"
+            )
+        except Exception as e:
+            st.error(f"Sample download failed: {e}")
+
     qs_rec = None
     if qs_uploaded is not None or qs_local_path:
         qs_source = _load_file(qs_uploaded, qs_local_path, "quickstart")

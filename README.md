@@ -89,7 +89,22 @@ KCNQ3-Lens is designed for **multi-hour overnight EEG recordings** of children w
 
 ---
 
-## Installation
+## Download a ready-to-run installer
+
+**No Python needed.** Pre-built installers for Mac and Windows are published with each GitHub Release:
+
+| Platform | Download |
+|---|---|
+| **macOS (Apple Silicon)** | [Latest release → KCNQ3-Lens-macos-apple-silicon.zip](https://github.com/therealsamm85/kcnq3-lens/releases/latest) |
+| **macOS (Intel)** | [Latest release → KCNQ3-Lens-macos-intel.zip](https://github.com/therealsamm85/kcnq3-lens/releases/latest) |
+| **Windows** | [Latest release → KCNQ3-Lens-windows.zip](https://github.com/therealsamm85/kcnq3-lens/releases/latest) |
+| **Linux** | [Latest release → KCNQ3-Lens-linux.zip](https://github.com/therealsamm85/kcnq3-lens/releases/latest) |
+
+Unzip → double-click `KCNQ3-Lens` (Mac/Linux) or `KCNQ3-Lens.exe` (Windows). Your browser opens automatically.
+
+> 💡 First-time users can click **🎬 Use sample data** in the app to try it on a public pediatric EEG (CHB-MIT, PhysioNet) without uploading their own recording.
+
+## Install from source (developers)
 
 You need Python 3.10 or newer.
 
