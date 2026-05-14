@@ -163,6 +163,13 @@ def build_doctor_pdf(
         for r in recs:
             story.append(Paragraph(f"• {r}", st["body"]))
 
+    # ── v0.7: Negative findings ─────────────────────────────────────────
+    neg = findings.get("negative_findings") or []
+    if neg:
+        story.append(Paragraph("Negative findings (checked, not present)", st["h2"]))
+        for n in neg:
+            story.append(Paragraph(f"• {n}", st["body"]))
+
     # Section 1: Topography
     topo = findings.get("topography")
     if topo:
@@ -403,6 +410,19 @@ def build_doctor_pdf(
         "B ≥ 65% + ≥12; C ≥ 50% + ≥8; otherwise D."
     )
     story.append(Paragraph(methods_text, st["small"]))
+
+    # ── v0.7: Reference citations ───────────────────────────────────────
+    try:
+        from src.clinical.citations import all_citations
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(Paragraph("<b>References</b>", st["small"]))
+        for c in all_citations():
+            pmid = f" (PMID {c.pubmed_id})" if c.pubmed_id else ""
+            story.append(Paragraph(
+                f"• <b>{c.short}</b>{pmid}: {c.note}", st["small"],
+            ))
+    except Exception:
+        pass
 
     _disclaimer(story, st, "doctor")
     doc.build(story)

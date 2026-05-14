@@ -36,6 +36,7 @@ from .analyses.state_split import summarize_state_split
 from .analyses.synchrony import summarize_synchrony
 from .analyses.sleep_architecture import summarize_sleep_architecture
 from .clinical.impression import build_impression, build_recommendations
+from .clinical.negative_findings import build_negative_findings
 from .utils.sanitize import safe_round_dict
 
 
@@ -208,6 +209,13 @@ def run_all_analyses(
         )
     except Exception as e:
         errors["clinical_impression"] = str(e)
+
+    # --- 13. Negative findings (v0.7) ---
+    # What was checked and not found — clinically informative.
+    try:
+        findings["negative_findings"] = build_negative_findings(findings)
+    except Exception as e:
+        errors["negative_findings"] = str(e)
 
     _emit("clinical", 1.0)
 
