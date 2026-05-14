@@ -811,6 +811,41 @@ shutil.rmtree(harden_dir, ignore_errors=True)
 os.environ.pop("KCNQ3_LENS_DATA", None)
 
 
+# ─── 16. v0.9.1 — Streamlit session-state widget-key conflict guard ─────────
+section("v0.9.1 — Streamlit widget-key session-state conflict guard")
+
+# Streamlit raises StreamlitAPIException if app.py writes to
+# st.session_state[KEY] when KEY is already used as a widget's `key=` param.
+# This test scans app.py for that pattern (live-reload found this bug in v0.9).
+
+import re
+import ast
+
+with open(Path(__file__).parent.parent / "app.py") as fh:
+    app_source = fh.read()
+
+# Find all string literals passed as `key=`
+widget_keys = set(re.findall(r"key\s*=\s*[\"']([\w_]+)[\"']", app_source))
+
+# Find all session_state writes: st.session_state["KEY"] = ... or st.session_state.KEY = ...
+sess_writes_bracket = set(re.findall(
+    r"st\.session_state\[[\"']([\w_]+)[\"']\]\s*=", app_source
+))
+sess_writes_attr = set(re.findall(
+    r"st\.session_state\.([\w_]+)\s*=", app_source
+))
+sess_writes = sess_writes_bracket | sess_writes_attr
+
+# Conflicts: any key that is BOTH a widget key AND written to session_state
+conflicts = widget_keys & sess_writes
+
+check(
+    f"No widget-key/session-state conflicts (found {len(conflicts)})",
+    len(conflicts) == 0,
+    f"conflicts: {sorted(conflicts)}" if conflicts else "",
+)
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
