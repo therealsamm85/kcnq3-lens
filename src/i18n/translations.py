@@ -33,7 +33,8 @@ TRANSLATIONS = {
         # Sidebar — global
         "sidebar_language": "Language",
         "sidebar_mode": "Analysis mode",
-        "mode_single": "Single recording",
+        "mode_quickstart": "🎯 Quick start (recommended)",
+        "mode_single": "Single recording (advanced)",
         "mode_compare": "Compare two recordings",
 
         # Sidebar — recording settings
@@ -381,7 +382,8 @@ TRANSLATIONS = {
 
         "sidebar_language": "Sprache",
         "sidebar_mode": "Analyse-Modus",
-        "mode_single": "Einzelne Aufnahme",
+        "mode_quickstart": "🎯 Schnellstart (empfohlen)",
+        "mode_single": "Einzelne Aufnahme (erweitert)",
         "mode_compare": "Zwei Aufnahmen vergleichen",
 
         "sidebar_recording_settings": "Aufnahme-Einstellungen",
