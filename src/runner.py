@@ -33,6 +33,7 @@ from .analyses.sleep_stages import summarize_sleep_stages
 from .analyses.swi import summarize_swi
 from .analyses.state_split import summarize_state_split
 from .analyses.synchrony import summarize_synchrony
+from .utils.sanitize import safe_round_dict
 
 
 def run_all_analyses(
@@ -185,4 +186,10 @@ def run_all_analyses(
     _emit("synchrony", 1.0)
 
     findings["errors"] = errors
+
+    # ── Final sanitization pass ──────────────────────────────────────────
+    # Every numeric leaf is guaranteed finite (no NaN/Inf) and a Python type
+    # (no numpy scalars). Prevents JSON-serialization failures, garbled PDFs,
+    # and LLM confusion when degenerate inputs produce non-finite values.
+    findings = safe_round_dict(findings, ndigits=3, default=0.0)
     return findings

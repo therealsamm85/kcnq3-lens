@@ -6,6 +6,33 @@ This project is in early development. The 0.x line is for the rare-epilepsy comm
 
 ---
 
+## [0.5.0] — 2026-05-14
+
+### Added (the five gaps a real pediatric neurologist asked for)
+
+- **Formal Spike-Wave Index (SWI) per sleep stage** (`src/analyses/swi.py`): Tassinari definition — % of stage time covered by continuous SW bursts (≥1 spike/s sustained ≥3s). CSWS / ESES criterion check (N3 SWI ≥ 85%) with automatic red-banner alert when met.
+- **Wake vs sleep spike-rate split with activation factor** (`src/analyses/state_split.py`): separate rates per state plus the single number every epileptologist uses. Labels: none / mild / moderate / strong (≥10× = dramatic activation).
+- **Bilateral synchrony / spread analysis** (`src/analyses/synchrony.py`): for each detected spike, checks ±50ms co-firing window and classifies into five patterns: focal, regional, bilateral synchronous, bilateral asynchronous, generalized. Distribution and dominant pattern reported.
+- **Sleep stage classification** (`src/analyses/sleep_stages.py`): YASA SleepStaging wrapper with µV-scaling and minimal-channel configuration. Heuristic delta/alpha fallback when YASA unavailable. Returns per-30s labels, stage minutes, sleep efficiency, NREM cycle count.
+- **Sample EEG traces in PDF**: new `plot_eeg_trace()` produces clinical-style multi-channel stacked plots. Doctor PDF accepts `sample_traces=list[(caption, png_bytes)]` and embeds them as 16×8 cm images.
+- **Methods section in PDF**: complete algorithm + parameter + reference documentation. Software version + analysis timestamp embedded. References Tassinari, Lacourse, Wamsley, Hagne, Niedermeyer.
+
+### Added (UI)
+
+- New "Clinical" tab in the findings view (between Quality and Topography). Shows SWI per stage (5 columns), state split (4 metrics), synchrony distribution (bar chart), sleep architecture (bar chart + sleep efficiency / cycle count). EN + DE strings.
+
+### Verified
+
+- 37/37 edge-case tests pass. Suite extended from 29 to 37 covering the new modules.
+- Graceful degradation: SWI on all-wake returns 0% (no crash). State split with zero wake minutes uses fallback definition (no div-by-zero). Synchrony with no events returns 'no_events' pattern.
+- Per-analysis try/except in the runner: one failure cannot abort the others.
+
+### Notes
+
+YASA's `SleepStaging` model is trained on adult polysomnography. Pediatric output is flagged as `confidence='heuristic'`. The output is still useful for SWI calculation; it's not a substitute for human-scored pediatric polysomnography.
+
+---
+
 ## [0.4.1] — 2026-05-13
 
 ### Fixed
@@ -116,6 +143,7 @@ Both fixes verified with the end-to-end smoke test; full pipeline still passes.
 
 | Version | Smoke test | Edge-case suite | Streamlit boot | New file?  |
 |---------|------------|-----------------|----------------|------------|
+| 0.5.0   | PASS       | 37/37 PASS      | PASS           | src/analyses/{sleep_stages,swi,state_split,synchrony}.py |
 | 0.4.1   | PASS       | 29/29 PASS      | PASS           | tests/test_edge_cases.py |
 | 0.4.0   | PASS       | n/a             | PASS           | src/insights/ |
 | 0.3.2   | PASS       | n/a             | PASS           | src/analyses/{sleep_onset, quality}.py |
