@@ -114,3 +114,57 @@ def _safe_json(obj: Any) -> str:
         return str(o)
 
     return json.dumps(obj, default=_default, indent=2)
+
+
+def build_copy_paste_prompt(
+    findings: dict[str, Any],
+    age_years: float | None = None,
+    variant: str | None = None,
+    task: str = "single",
+    pre_label: str | None = None,
+    post_label: str | None = None,
+) -> str:
+    """Build a complete, self-contained prompt that a family can paste into
+    any free chat interface (ChatGPT / Claude / Gemini web) — no API key
+    required.
+
+    The returned string includes:
+    - The full role / scope / safety instructions
+    - The findings JSON payload (no raw EEG, just metrics)
+    - A user-facing closing question
+
+    Use task='single' for single-recording interpretation, 'compare' for
+    pre/post comparison.
+    """
+    if task == "compare":
+        system = COMPARISON_SYSTEM_PROMPT
+        payload = build_comparison_payload(
+            findings, age_years=age_years, variant=variant,
+            pre_label=pre_label or "pre-treatment",
+            post_label=post_label or "post-treatment",
+        )
+        closing = (
+            "Please interpret these comparison findings for a parent "
+            "following the structure described above."
+        )
+    else:
+        system = SYSTEM_PROMPT
+        payload = build_findings_payload(
+            findings, age_years=age_years, variant=variant,
+        )
+        closing = (
+            "Please interpret these findings for a parent following the "
+            "structure described above."
+        )
+
+    return (
+        "# Instructions for the AI\n\n"
+        f"{system}\n\n"
+        "---\n\n"
+        "# Findings to interpret\n\n"
+        "```json\n"
+        f"{_safe_json(payload)}\n"
+        "```\n\n"
+        "---\n\n"
+        f"{closing}"
+    )
