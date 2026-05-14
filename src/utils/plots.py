@@ -136,6 +136,45 @@ def plot_eeg_trace(
     return fig
 
 
+def plot_longitudinal_trend(
+    dates: list[str],
+    values: list[float],
+    title: str = "",
+    ylabel: str = "",
+    normative_range: tuple[float, float] | None = None,
+    figsize: tuple[float, float] = (10, 4),
+):
+    """Plot a single metric over time with optional normative band.
+
+    Parameters
+    ----------
+    dates : list[str]
+        Date strings on the x-axis (sorted).
+    values : list[float]
+        One value per date.
+    normative_range : (low, high), optional
+        If provided, draws a shaded green band for the age-typical range.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    x = list(range(len(dates)))
+    ax.plot(x, values, marker="o", color="#2E4A6B", linewidth=2)
+
+    if normative_range is not None:
+        low, high = normative_range
+        ax.axhspan(low, high, color="#9CC58E", alpha=0.25,
+                   label=f"age-typical {low}–{high}")
+        ax.legend(loc="upper right", fontsize=8)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(dates, rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(True, axis="y", linestyle=":", alpha=0.4)
+    plt.tight_layout()
+    return fig
+
+
 def plot_time_of_night(
     bin_centers_hours: list[float],
     counts_per_min: list[float],

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -32,6 +33,12 @@ from src.reports import build_doctor_pdf, build_parent_pdf
 from src.utils.plots import plot_topomap, plot_time_of_night
 from src.insights import build_narrative
 from src.clinical.metadata import RecordingMetadata, to_summary_lines
+from src.longitudinal import (
+    StoredEntry, save_entry, load_all_entries as load_longitudinal,
+    DiaryEntry, append_entry as append_diary, load_diary, diary_to_table,
+    build_trends_table, get_metric_series, METRICS,
+)
+from src.utils.plots import plot_longitudinal_trend
 from src.i18n import get_translator, LANGUAGES
 
 
@@ -72,10 +79,15 @@ with st.expander(T("disclaimer_header"), expanded=False):
 
 # ─── Sidebar: mode selector ─────────────────────────────────────────────────
 st.sidebar.header(T("sidebar_mode"))
+_MODE_LABELS = {
+    "single": T("mode_single"),
+    "compare": T("mode_compare"),
+    "longitudinal": "🗓️ Longitudinal history",
+}
 mode = st.sidebar.radio(
     label="mode",
-    options=["single", "compare"],
-    format_func=lambda x: T("mode_single") if x == "single" else T("mode_compare"),
+    options=list(_MODE_LABELS.keys()),
+    format_func=lambda x: _MODE_LABELS[x],
     label_visibility="collapsed",
 )
 
@@ -673,6 +685,40 @@ if mode == "single":
         st.header(T("step3_header"))
         _render_findings_tabs(findings, key_prefix="single")
 
+        # v0.8: Save-to-history button so this recording joins the longitudinal series
+        with st.expander("🗓️ Save this recording to longitudinal history", expanded=False):
+            st.caption("Persist these findings to disk so they appear in the "
+                       "longitudinal view alongside other recordings.")
+            save_date = st.text_input("Recording date (YYYY-MM-DD)",
+                                       value=md_recording_date or "",
+                                       key="long_save_date")
+            save_label = st.text_input("Label",
+                                        value="recording",
+                                        key="long_save_label",
+                                        help="e.g. 'pre-Sultiam' / 'post-Amitriptylin month 3'")
+            if st.button("💾 Save to history", key="long_save_btn"):
+                try:
+                    if not save_date.strip():
+                        st.error("Date required.")
+                    else:
+                        entry = StoredEntry(
+                            recording_date=save_date.strip(),
+                            label=save_label.strip() or "recording",
+                            findings=findings,
+                            metadata={
+                                "age_years": age_years, "variant": variant,
+                                "current_medications": [
+                                    m.strip() for m in md_meds.split("\n") if m.strip()
+                                ],
+                                "patient_label": md_patient_label,
+                                "indication": md_indication,
+                            },
+                        )
+                        out_path = save_entry(entry)
+                        st.success(f"Saved to {out_path}")
+                except Exception as e:
+                    st.error(f"Save failed: {e}")
+
         # Proactive insights (rule-based, no LLM)
         st.markdown("---")
         _render_insights(findings, key_prefix="single")
@@ -771,6 +817,112 @@ if mode == "single":
                 )
             except Exception as e:
                 st.warning(f"PDF generation failed: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODE C: Longitudinal history
+# ═══════════════════════════════════════════════════════════════════════════
+elif mode == "longitudinal":
+    st.header("🗓️ Longitudinal history")
+    st.caption(
+        "Track EEG metrics + development milestones over time. "
+        "All data is stored locally in `~/.kcnq3-lens/` and never uploaded."
+    )
+
+    entries = load_longitudinal()
+    if not entries:
+        st.info(
+            "No saved recordings yet. Run an analysis in **Single recording** "
+            "mode, then click '💾 Save to history' below the findings tabs."
+        )
+    else:
+        st.write(f"**{len(entries)} recordings on file** "
+                 f"(dates: {entries[0].recording_date} → {entries[-1].recording_date})")
+
+        # Trends table
+        with st.expander("📊 Trends table", expanded=True):
+            table = build_trends_table(entries)
+            st.dataframe(pd.DataFrame(table), use_container_width=True)
+
+        # Per-metric trend plots
+        st.subheader("📈 Metric trends")
+        # Show the 4-6 most clinically meaningful metrics
+        priority_metrics = [
+            ("spike_rate_per_min", "Spike rate (/min)", None),
+            ("spindle_density_per_min", "Spindle density (/min)", (3.0, 5.0)),
+            ("pdr_hz", "Posterior dominant rhythm (Hz)", (8.0, 10.0)),
+            ("swi_n3_pct", "SWI N3 (%)", None),
+            ("activation_factor", "Sleep activation factor", None),
+            ("bursts_10s_count", "Bursts ≥10s (count)", None),
+        ]
+        cols = st.columns(2)
+        for i, (metric, label, norm) in enumerate(priority_metrics):
+            dates, vals = get_metric_series(entries, metric)
+            if len(vals) < 1:
+                continue
+            with cols[i % 2]:
+                try:
+                    fig = plot_longitudinal_trend(
+                        dates, vals,
+                        title=label, ylabel=label,
+                        normative_range=norm,
+                    )
+                    st.pyplot(fig)
+                    plt.close(fig)
+                except Exception as e:
+                    st.warning(f"Plot for {label} failed: {e}")
+
+    # Development diary
+    st.markdown("---")
+    st.subheader("📝 Development diary")
+    st.caption("Log milestones, word counts, sleep observations alongside "
+               "the EEG timeline.")
+
+    with st.expander("Add a diary entry"):
+        di_date = st.text_input("Date (YYYY-MM-DD)",
+                                value=datetime.now().strftime("%Y-%m-%d"),
+                                key="diary_date")
+        c1, c2 = st.columns(2)
+        with c1:
+            di_words = st.number_input("Active word count", min_value=0,
+                                       value=0, key="diary_words")
+            di_concentration = st.number_input(
+                "Longest concentration (minutes)", min_value=0.0,
+                value=0.0, key="diary_concentration",
+            )
+            di_sleep_q = st.slider("Sleep quality (1=bad, 5=great)",
+                                   1, 5, 3, key="diary_sleep_q")
+        with c2:
+            di_milestone = st.text_input("New milestone (optional)",
+                                          key="diary_milestone")
+            di_med_change = st.text_input("Medication change today (optional)",
+                                          key="diary_med")
+            di_seizure = st.text_input("Seizure event (optional)",
+                                       key="diary_seizure")
+        di_notes = st.text_area("Notes", "", key="diary_notes")
+
+        if st.button("💾 Save diary entry", key="diary_save"):
+            entry = DiaryEntry(
+                date=di_date,
+                word_count=di_words if di_words > 0 else None,
+                concentration_minutes=di_concentration if di_concentration > 0 else None,
+                sleep_quality_1to5=di_sleep_q,
+                new_milestone=di_milestone or None,
+                medication_change=di_med_change or None,
+                seizure_event=di_seizure or None,
+                notes=di_notes,
+            )
+            try:
+                append_diary(entry)
+                st.success("Diary entry saved.")
+            except Exception as e:
+                st.error(f"Save failed: {e}")
+
+    diary = load_diary()
+    if diary:
+        st.write(f"**{len(diary)} diary entries**")
+        st.dataframe(pd.DataFrame(diary_to_table(diary)),
+                     use_container_width=True, hide_index=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

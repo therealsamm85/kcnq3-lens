@@ -48,6 +48,8 @@ class MorphologyResult:
     polyspike_fraction: float      # peaks <250 ms apart
     classification: str            # "predominantly_simple", "mixed", "predominantly_complex"
     duration_percentiles_ms: tuple[float, float, float]  # p25, p50, p75
+    rate_ci_low_per_min: float | None = None   # 95% CI lower bound for events/min
+    rate_ci_high_per_min: float | None = None  # 95% CI upper bound for events/min
 
 
 def compute_spike_morphology(
@@ -98,10 +100,12 @@ def compute_spike_morphology(
     min_dist = max(1, int(0.08 * rec.sfreq))
 
     all_peaks: list[int] = []
+    per_epoch_counts: list[int] = []   # for bootstrap CI
     for ep_start in range(0, len(det), samples_per_epoch):
         ep_end = min(ep_start + samples_per_epoch, len(det))
         ep_det = det[ep_start:ep_end]
         if len(ep_det) < min_dist * 2:
+            per_epoch_counts.append(0)
             continue
         ep_centered = ep_det - np.median(ep_det)
         local_mad = np.median(np.abs(ep_centered))
@@ -109,6 +113,7 @@ def compute_spike_morphology(
         # Require: peak > mad_multiplier × MAD  AND  peak > 3 × RMS
         local_threshold = max(mad_multiplier * local_mad, 3.0 * local_rms)
         if local_threshold <= 0 or not np.isfinite(local_threshold):
+            per_epoch_counts.append(0)
             continue
         local_peaks, _ = find_peaks(
             np.abs(ep_det),
@@ -117,6 +122,7 @@ def compute_spike_morphology(
         )
         # Offset peaks back to global index space
         all_peaks.extend((local_peaks + ep_start).tolist())
+        per_epoch_counts.append(int(len(local_peaks)))
 
     peaks = np.array(all_peaks, dtype=int)
 
@@ -174,6 +180,21 @@ def compute_spike_morphology(
 
     p25, p50, p75 = np.percentile(durs, [25, 50, 75])
 
+    # Bootstrap 95% CI on rate (per-epoch resampling)
+    rate_ci_low = rate_ci_high = None
+    if len(per_epoch_counts) >= 2:
+        try:
+            from ..utils.bootstrap import bootstrap_count_ci
+            # Rate = mean count per epoch × (epochs per minute)
+            epochs_per_min = 60.0 / epoch_seconds
+            ci = bootstrap_count_ci(
+                per_epoch_counts, aggregate="mean", n_bootstrap=500,
+            )
+            rate_ci_low = float(ci.ci_low * epochs_per_min)
+            rate_ci_high = float(ci.ci_high * epochs_per_min)
+        except Exception:
+            pass
+
     return MorphologyResult(
         channel=target_channel,
         n_events_detected=len(peaks),
@@ -184,6 +205,8 @@ def compute_spike_morphology(
         polyspike_fraction=poly_frac,
         classification=classification,
         duration_percentiles_ms=(float(p25), float(p50), float(p75)),
+        rate_ci_low_per_min=rate_ci_low,
+        rate_ci_high_per_min=rate_ci_high,
     )
 
 
@@ -192,6 +215,14 @@ def summarize_morphology(result: MorphologyResult) -> dict:
         "channel": result.channel,
         "n_events": result.n_events_detected,
         "events_per_minute": round(result.n_events_per_minute, 1),
+        "events_per_minute_ci_low": (
+            round(result.rate_ci_low_per_min, 1)
+            if result.rate_ci_low_per_min is not None else None
+        ),
+        "events_per_minute_ci_high": (
+            round(result.rate_ci_high_per_min, 1)
+            if result.rate_ci_high_per_min is not None else None
+        ),
         "pct_simple_spikes": round(result.pct_simple_spikes, 1),
         "pct_sharp_waves": round(result.pct_sharp_waves, 1),
         "pct_complex_spike_wave": round(result.pct_complex_spike_wave, 1),

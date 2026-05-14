@@ -6,6 +6,27 @@ This project is in early development. The 0.x line is for the rare-epilepsy comm
 
 ---
 
+## [0.7.0] — 2026-05-14
+
+### Added — clinical credibility
+
+- **Reference citations** (`src/clinical/citations.py`): 8 indexed entries (Tassinari, Wamsley, Lacourse, Vallat, Hagne, Niedermeyer, Binnie, Gramfort) with full citation + PubMed ID + URL + supporting-claim note. Rendered at the end of doctor PDF's methods section.
+- **Negative findings** (`src/clinical/negative_findings.py`): plain-language statements of what was checked and not present (no CSWS, no generalized SW, no background slowing, no strong activation, no sustained bursts, channel-quality OK, spindles in normal range). Doctor PDF section.
+- **Bootstrap confidence intervals** (`src/utils/bootstrap.py`): `bootstrap_count_ci(per_epoch_values, aggregate, n_bootstrap)` + `format_ci()`. Resampling is per-epoch.
+- **ILAE / ACNS terminology** (`src/clinical/terminology.py`): `acns_pattern_for_burst(freq_hz)` → ACNS 2021 names. `ilae_descriptor_for_synchrony(pattern_id)` → ILAE 2017 descriptors.
+- **Anonymization helper** (`src/clinical/anonymize.py`): strips patient identifiers from EDF / NK headers. Auto-detect by extension. Creates `_anonymized` copy, never modifies original.
+
+### Test suite
+
+- 81/81 tests pass (was 61).
+- 20 new tests covering citations, negative findings, terminology, bootstrap, EDF + NK + auto anonymization paths.
+
+### Version
+
+0.6.0 → 0.7.0.
+
+---
+
 ## [0.6.0] — 2026-05-14
 
 ### Added — clinical report restructure (Impression first)
@@ -167,6 +188,7 @@ Both fixes verified with the end-to-end smoke test; full pipeline still passes.
 
 | Version | Smoke test | Edge-case suite | Streamlit boot | New file?  |
 |---------|------------|-----------------|----------------|------------|
+| 0.7.0   | PASS       | 81/81 PASS      | PASS           | src/clinical/{citations,negative_findings,terminology,anonymize}.py, src/utils/bootstrap.py |
 | 0.6.0   | PASS       | 61/61 PASS      | PASS           | src/clinical/{metadata,impression}.py, src/analyses/sleep_architecture.py |
 | 0.5.1   | PASS       | 52/52 PASS      | PASS           | src/utils/sanitize.py |
 | 0.5.0   | PASS       | 37/37 PASS      | PASS           | src/analyses/{sleep_stages,swi,state_split,synchrony}.py |
