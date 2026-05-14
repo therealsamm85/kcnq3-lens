@@ -155,7 +155,7 @@ def run_all_analyses(
     # --- 7. Sleep stages (v0.5) ---
     sleep_stage_result = None
     try:
-        sleep_stage_result = compute_sleep_stages(rec)
+        sleep_stage_result = compute_sleep_stages(rec, age_years=age_years)
         findings["sleep_stages"] = summarize_sleep_stages(sleep_stage_result)
     except Exception as e:
         errors["sleep_stages"] = str(e)
