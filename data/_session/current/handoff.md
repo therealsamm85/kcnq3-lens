@@ -1,118 +1,96 @@
-# Handoff — KCNQ3-Lens v0.8.1 + Liyana test run — 2026-05-14 13:55
+# Handoff — KCNQ3-Lens v0.9.1 + live-test gap — 2026-05-14 16:45
 
 ## Goal
 
-Build a privacy-first, family-accessible quantitative EEG analysis tool for
-children with rare epilepsies (especially KCNQ3 spectrum). v0.1 → v0.8.1
-takes it from "Nihon Kohden reader + 5 analyses" to a clinical-grade pipeline
-with 13 analyses, deterministic Impression generator, longitudinal tracker,
-and 99/99 passing tests.
+Privacy-first, family-accessible quantitative pediatric EEG analysis for KCNQ3-spectrum and similar rare epilepsies. 16 commits across v0.1 → v0.9.1, ~10k LOC, 100/100 passing tests, real-data validated on Liyana's pre-treatment EEG.
 
 ## Phase status
 
-- [x] v0.1 — Foundation (NK reader, 5 analyses, Streamlit)
-- [x] v0.2 — Multi-AI + Compare + i18n (EN/DE)
-- [x] v0.3 — QC, auto-sleep, topo plot, time-of-night; morphology + bursts BUG FIXES
-- [x] v0.4 — Proactive insights (anatomy + patterns + cross-modal)
-- [x] v0.5 — Clinical metrics (SWI, state split, synchrony, sample traces, methods)
-- [x] v0.6 — Impression-first PDF + metadata + sleep architecture
-- [x] v0.7 — Citations + negative findings + bootstrap CI + ILAE/ACNS + anonymize
-- [x] v0.8 — Longitudinal tracker (storage, diary, trends, CI integration)
-- [x] v0.8.1 — Hardening (corrupt-input resilience)
-- [x] Liyana real-data test run — confirmed v0.8 produces new clinically meaningful findings
-- [ ] Beta-tester onboarding ← next phase (NOT code; outreach)
+- [x] v0.1 — v0.8.1 — full pipeline (13 analyses, multi-AI, longitudinal, PDFs)
+- [x] v0.8.2 — real-data bugs fixed (YASA staging, cycle counter)
+- [x] v0.9 — Quick Start (parent-friendly 4-step UI)
+- [x] v0.9.1 — Streamlit widget-key/session-state conflict fixed (live-bug)
+- [ ] **Next: automated browser testing** ← user explicitly flagged this gap
 
-## Completed in this session
+## Completed in this session (v0.7 → v0.9.1)
 
-- v0.7.0 release notes (`docs/RELEASE_v0.7.0.md`)
-- CHANGELOG v0.7 + v0.8 entries
-- Morphology now reports bootstrap CI on events/min
-- `src/longitudinal/{storage,diary,trends,__init__}.py` (~400 LOC)
-- `src/utils/plots.py`: added `plot_longitudinal_trend()`
-- Streamlit: new "🗓️ Longitudinal history" mode + save-to-history expander
-- Tests: 81 → 94 → 99 (longitudinal + hardening)
-- Real-data run on synthesized-from-measurements Liyana profile
+- Bootstrap CI integrated into morphology (events_per_minute_ci_low/high)
+- Longitudinal storage + diary + trends + plot_longitudinal_trend
+- Streamlit modes: Quick Start + Compare + Longitudinal added
+- YASA staging fixed: handles Hypnogram return + accepts age explicitly
+- Sleep architecture cycle counter fix (was 57 → now 0 for Liyana's fragmented sleep)
+- Real-data Liyana run: N3 SWI = 0.3% (not the synthesized 45%); CSWS criterion clearly not met
+- v0.9.1 fix: widget-key/session-state conflict (live-bug, user-found)
+- New test #100: static scan for widget-key/session-state conflicts in app.py
 
-## Files touched (v0.7 → v0.8.1)
+## Files touched this session
 
 ```
-docs/RELEASE_v0.7.0.md          (new)
-CHANGELOG.md                    (updated)
-src/__init__.py                 (version 0.7 → 0.8)
-src/longitudinal/__init__.py    (new)
-src/longitudinal/storage.py     (new)
-src/longitudinal/diary.py       (new)
-src/longitudinal/trends.py      (new)
-src/utils/plots.py              (+plot_longitudinal_trend)
-src/utils/__init__.py           (export added)
-src/analyses/morphology.py      (+CI bootstrap fields)
-app.py                          (+mode='longitudinal' + save-to-history)
-tests/test_edge_cases.py        (+18 new tests)
+src/__init__.py                             (version 0.8 → 0.9.0)
+src/analyses/morphology.py                  (+CI bootstrap fields)
+src/analyses/sleep_stages.py                (YASA Hypnogram + age fix)
+src/analyses/sleep_architecture.py          (cycle counter fix)
+src/longitudinal/{storage,diary,trends,__init__}.py  (new)
+src/utils/plots.py                          (+plot_longitudinal_trend)
+src/utils/__init__.py                       (export)
+src/i18n/translations.py                    (Quick Start strings EN+DE)
+app.py                                      (Quick Start mode + bug fix)
+tests/test_edge_cases.py                    (longitudinal + widget-key tests)
+docs/RELEASE_v0.7.0.md                      (new)
+CHANGELOG.md                                (v0.7 + v0.8 entries)
 ```
 
 ## Verification status
 
-- **99/99 tests pass** (tests/test_edge_cases.py — full edge-case + hardening suite)
-- Streamlit boots cleanly on ports 8508–8514 (all confirmed)
-- Strict JSON serialization on degenerate input: passes
-- Liyana real-data run: full pipeline produces valid PDF (11.6 KB doctor / 2.9 KB parent)
-- All sanity checks on synthesized-from-measurements findings passed
+- **100/100 tests pass** (tests/test_edge_cases.py)
+- Streamlit running live on http://localhost:8501 (PID 91071, nohup-managed)
+- Live-tested Quick Start with real Liyana EEG → uncovered v0.9.1 bug → fixed
+- Strict JSON serialization on degenerate input still passes
 
-## Errors encountered & fixed (across sessions)
+## Errors encountered & fixed
 
-- v0.3: morphology global-MAD over-counted by ~6× → per-epoch local MAD
-- v0.3: bursts.n_channels_involved always 18/19 → adaptive per-channel baseline
-- v0.4.1: pattern matcher fired on empty/normal data → required-gate criteria
-- v0.5.1: NaN/Inf + numpy scalars leaked into JSON → src/utils/sanitize.py
-- v0.8: corrupt JSON/JSONL handled gracefully (skip-not-crash)
+- v0.8.2: YASA SleepStaging failed silently with metadata=None → fixed with default age=5
+- v0.8.2: Sleep cycle counter over-counted 57x → fixed by skip-past-REM
+- v0.9.1: Streamlit widget-key/session-state conflict on qs_age write → renamed to qs_findings_age
 
-## Open risks / unknowns
+## Open risks / unknowns — IMPORTANT
 
-- The Nihon Kohden reader has been tested on 1 recording family. Other variants may need verification.
-- Clinical thresholds tuned to Liyana's reference recording. Need refinement with more cases.
-- Sleep stage classification uses YASA (adult-trained) — pediatric output is heuristic.
-- No real beta-tester feedback yet. The next decisions should come from real families.
+**Live-browser-testing gap.** v0.9.1 was a runtime bug that:
+- 99/99 synthetic tests passed
+- app.py syntax compiled
+- Streamlit headless-mode bootstrap succeeded
+- BUT: only surfaced when a human clicked "Analyze" in the actual browser
+
+The user flagged this explicitly: "Deswegen solltest du die App im Browser einmal durchtesten." Static + headless tests aren't enough for a Streamlit app — runtime-only widget interactions need real browser checks.
+
+Options for next phase:
+1. **Playwright/Selenium tests** for Streamlit — automated browser drive
+2. **Streamlit-AppTest** (Streamlit's own testing framework that simulates widget interactions WITHOUT a browser) — likely the right answer
+3. **Manual smoke-test checklist** before each release (human runs 5-step checklist)
 
 ## Naming conventions in force
 
 - `compute_<name>()` + `<Name>Result` dataclass + `summarize_<name>()` per analysis
 - Local data: `~/.kcnq3-lens/` (override via `KCNQ3_LENS_DATA` env)
-- All clinical strings under `src/i18n/translations.py` with EN as source-of-truth
-- Patterns gated via `required=True` on critical criteria
+- Streamlit widget keys: `qs_*` for Quick Start mode, prefix-scoped per mode
+- Never write to `st.session_state[K]` if `K` is also a widget `key=K`
 
 ## Exact next step
 
-**Not code — outreach.** Push tags + GitHub releases for v0.5, v0.6, v0.7, v0.8.1.
-Identify 3 KCNQ3 families willing to beta-test. Reach out to RIKEE, Prof.
-Weckhuysen (Antwerp), Prof. Cooper (Baylor). Collect 2–4 weeks of real-world
-feedback before building v0.9.
+**Add Streamlit-AppTest-based runtime tests** to catch widget-API bugs before commit. AppTest framework simulates widget interactions without a browser, integrates into existing pytest flow.
 
-If continuing code work without waiting for feedback, candidate v0.9 features:
-- HFO detection (sample-rate-aware; only relevant for ≥500 Hz recordings)
-- Z-score plots against pediatric normative database (needs database first)
-- Reactivity (eyes open / closed) — needs event markers
-- AAC integration helpers (export to PECS / proloquo2go formats)
+Implementation:
+1. Add `from streamlit.testing.v1 import AppTest` to a new `tests/test_app_runtime.py`
+2. Build `at = AppTest.from_file("app.py").run()` and drive widgets programmatically: `at.text_input("qs_age").set_value("5")`, `at.button("Run").click().run()`
+3. Cover Quick Start happy path + each mode switch + at least one analysis end-to-end
+4. Wire into `tests/test_edge_cases.py` or new file; ensure CI catches widget-API errors
 
-## Key numerical findings from Liyana real-data run (v0.8 surfaced these)
-
-- **N3 SWI: 45%** (was reported as "0%" in early sessions using wrong definition)
-- **Activation factor: 8.2×** (moderate sleep activation, ~border to strong)
-- **REM latency: 72 min** (verfrüht — new finding, marker of fragmented architecture)
-- **Mean cycle: 66.7 min** (verkürzt vs healthy ~90)
-- **Synchrony: 32% regional dominant** (NOT generalized epilepsy pattern)
-- **Spike rate: 19.5/min (95% CI 17.2–22.0)** (with bootstrap CI)
-- **Top network: Executive (6.17)** — slightly above Speech-motor (5.49)
-
-CSWS criterion (N3 SWI ≥ 85%): **NOT MET** — important precision over earlier "SWI=0%" claim.
+Streamlit is still running on localhost:8501 (PID 91071). User can continue testing live while next session builds the AppTest layer.
 
 ## Recommended model for next phase
 
-`sonnet` — next phase is non-code (outreach). If code resumes, mechanical work
-(formatting GitHub releases, writing onboarding docs) is fine on sonnet.
-Escalate to `opus` only if a clinical-pattern-library revision is needed.
+`sonnet` — mechanical wiring of AppTest framework. Streamlit-AppTest API is well-documented.
 
 ## Compaction suggestion
 
-`stop_for_user` — natural stopping point. The tool is feature-complete enough
-to need real users. Continuing to build features without feedback is
-speculation. User should push releases + recruit beta-testers.
+`stop_for_user` — context >80% saturated, user is actively testing live. Natural boundary. The next session should start fresh with this handoff + the explicit "add AppTest runtime tests" task.

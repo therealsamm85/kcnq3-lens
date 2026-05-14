@@ -42,6 +42,18 @@
 **Alternatives considered:** SQLite — rejected, too heavy for a 50-recording case. Cloud storage — explicit non-goal.
 **Reversibility:** Reversible. File format is JSON; migrating to another backend is a one-week refactor.
 
+## 2026-05-14 — Static + headless tests are insufficient for Streamlit
+**Decision:** Next test layer for Streamlit must be runtime-based (Streamlit-AppTest framework). Static syntax checks + headless boot are necessary but not sufficient.
+**Why:** v0.9.1 widget-key/session-state conflict passed all 99 prior tests, app.py compile check, AND Streamlit headless boot — but raised at runtime when a real user clicked Analyze. The user explicitly flagged this gap. Streamlit's widget lifecycle rules (e.g. "don't write to session_state[K] if K is a widget key") only fire when widgets are actually instantiated in a real run loop. AppTest simulates that lifecycle without a browser.
+**Alternatives considered:** Playwright/Selenium (heavier, slower); manual checklist (relies on human discipline before every release).
+**Reversibility:** Reversible by removing the new test file. The static widget-key scan (test #100) stays as a complement.
+
+## 2026-05-14 — Quick Start as the default first-time mode
+**Decision:** Quick Start (parent-friendly 4-step wizard) is the first option in the mode radio, selected by default.
+**Why:** The Single (Advanced) mode is overwhelming for first-time users — ~15 sidebar fields visible at once, technical jargon, no onboarding. Quick Start hides all that complexity behind a 4-step flow with one big "Analyze" button. Advanced mode preserved for users who want full control.
+**Alternatives considered:** Modal/popup wizard layered on top of Single mode — rejected (Streamlit doesn't render modals natively well). Separate URL paths — rejected (Streamlit is single-page).
+**Reversibility:** Reversible by re-ordering mode list. No data structures depend on it.
+
 ## 2026-05-14 — Impression-first PDF ordering
 **Decision:** Doctor PDF now opens with Impression + Recommendations, then findings tables, then Methods + Citations.
 **Why:** Real clinicians read top-down. Impression in 10 seconds, scan findings for verification, methods only if challenging the math. The old "all findings then maybe impression at end" was researcher-style.
