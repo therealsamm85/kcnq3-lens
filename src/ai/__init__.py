@@ -17,6 +17,7 @@ from .router import (
 from .prompt import (
     build_findings_payload,
     build_comparison_payload,
+    build_copy_paste_prompt,
     SYSTEM_PROMPT,
     COMPARISON_SYSTEM_PROMPT,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "PROVIDERS",
     "build_findings_payload",
     "build_comparison_payload",
+    "build_copy_paste_prompt",
     "SYSTEM_PROMPT",
     "COMPARISON_SYSTEM_PROMPT",
     "LLMProvider",

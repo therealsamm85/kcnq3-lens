@@ -26,6 +26,7 @@ from src.comparison import compare_findings
 from src.ai import (
     interpret_findings,
     interpret_comparison,
+    build_copy_paste_prompt,
     list_providers,
     get_provider_class,
 )
@@ -1029,6 +1030,42 @@ if mode == "quickstart":
                 )
             except Exception as e:
                 st.warning(f"PDF failed: {e}")
+
+        # ── v0.10.1: Copy-paste prompt for free AI chat (no API key) ────
+        st.markdown("---")
+        st.markdown("#### 🤖 No API key? Use a free AI chat instead")
+        st.caption(
+            "Copy the prompt below and paste it into a free ChatGPT / Claude / "
+            "Gemini web chat. You'll get a plain-language interpretation "
+            "without needing an API key. Only the numerical findings travel "
+            "with the prompt — never raw EEG data."
+        )
+
+        try:
+            qs_copy_prompt = build_copy_paste_prompt(
+                findings=qs_findings,
+                age_years=qs_age,
+                variant=qs_variant or None,
+                task="single",
+            )
+            with st.expander("📋 Show prompt (click to expand, then copy)",
+                             expanded=False):
+                st.code(qs_copy_prompt, language="markdown")
+                st.download_button(
+                    "💾 Download prompt as .txt",
+                    qs_copy_prompt,
+                    file_name="eeg-ai-prompt.txt",
+                    mime="text/plain",
+                    key="qs_prompt_download",
+                )
+                st.caption(
+                    "💡 Tip: in the chat interface, paste the entire prompt at once. "
+                    "The AI will follow the role-and-scope instructions at the "
+                    "top and produce the same kind of interpretation as the "
+                    "built-in API integration."
+                )
+        except Exception as e:
+            st.warning(f"Could not build copy-paste prompt: {e}")
 
         # Hint: switch to advanced for more
         st.markdown("---")

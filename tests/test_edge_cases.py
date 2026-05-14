@@ -892,6 +892,69 @@ except Exception as e:
     check("plot_eeg_trace_with_events with events", False, str(e))
 
 
+# ─── 18. v0.10.1 — copy-paste-prompt builder ────────────────────────────────
+section("v0.10.1 — Copy-paste prompt for free AI chats")
+
+from src.ai import build_copy_paste_prompt, SYSTEM_PROMPT, COMPARISON_SYSTEM_PROMPT
+
+# Single-recording prompt
+try:
+    sample_findings = {
+        "spindles": {"density_per_minute": 1.3, "interpretation": "below"},
+        "background": {"posterior_dominant_rhythm_hz": 4.0, "interpretation": "severely_slow"},
+    }
+    prompt = build_copy_paste_prompt(
+        findings=sample_findings,
+        age_years=5.0,
+        variant="KCNQ3 p.Arg230His",
+        task="single",
+    )
+    check("Single-task prompt is non-empty string",
+          isinstance(prompt, str) and len(prompt) > 500)
+    check("Single-task prompt contains role/scope instructions",
+          "NOT a doctor" in prompt or "educational assistant" in prompt)
+    check("Single-task prompt contains findings JSON",
+          "```json" in prompt and "spindles" in prompt)
+    check("Single-task prompt contains variant info",
+          "KCNQ3 p.Arg230His" in prompt)
+    check("Single-task prompt has closing instruction",
+          "interpret these findings" in prompt.lower())
+except Exception as e:
+    check("Single-task prompt builds", False, str(e))
+
+# Compare-task prompt
+try:
+    prompt_compare = build_copy_paste_prompt(
+        findings={
+            "deltas": [
+                {"name": "spindle density", "pre": 0.5, "post": 2.0,
+                 "direction": "improved"}
+            ],
+            "overall": {"verdict": "clearly_improved"},
+        },
+        age_years=5.0,
+        variant="KCNQ3 p.Arg230His",
+        task="compare",
+        pre_label="pre-Sultiam",
+        post_label="post-Sultiam M2",
+    )
+    check("Compare-task prompt is non-empty string",
+          isinstance(prompt_compare, str) and len(prompt_compare) > 500)
+    check("Compare-task prompt uses comparison system prompt",
+          "compare" in prompt_compare.lower() or
+          "pre and post" in prompt_compare.lower())
+except Exception as e:
+    check("Compare-task prompt builds", False, str(e))
+
+# Empty findings: should still produce a valid prompt
+try:
+    prompt_empty = build_copy_paste_prompt(findings={}, age_years=None)
+    check("Empty-findings prompt still builds",
+          isinstance(prompt_empty, str) and len(prompt_empty) > 200)
+except Exception as e:
+    check("Empty-findings prompt", False, str(e))
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
