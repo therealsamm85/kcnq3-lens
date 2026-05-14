@@ -175,6 +175,115 @@ def plot_longitudinal_trend(
     return fig
 
 
+def plot_eeg_trace_with_events(
+    data: np.ndarray,
+    channel_names: list[str],
+    sfreq: float,
+    window_start_s: float,
+    duration_s: float = 10.0,
+    events: list[dict] | None = None,
+    title: str = "",
+    figsize: tuple[float, float] = (12, 9),
+    highlight_channel: str | None = None,
+):
+    """Render a clinical-style multi-channel EEG trace with event overlays.
+
+    Parameters
+    ----------
+    data : np.ndarray, shape (n_channels, n_samples)
+        Raw EEG data (full recording).
+    channel_names : list[str]
+        Channel names in same order as `data` rows.
+    sfreq : float
+        Sampling rate (Hz).
+    window_start_s : float
+        Start time of the window to display (seconds from recording start).
+    duration_s : float
+        Display duration in seconds.
+    events : list of dicts, optional
+        Each dict has 'start_s', 'duration_s', optional 'label', optional
+        'color' (default red), optional 'channel' (highlight that row).
+    highlight_channel : str, optional
+        Render this channel's row in red (e.g. the primary detection channel).
+    """
+    # `data` is the segment to display. `window_start_s` is the time label
+    # for the x-axis (so events with absolute timestamps overlay correctly).
+    # `duration_s` is the intended display length but actual display matches
+    # data.shape[1].
+    if data.size == 0 or data.shape[0] == 0 or data.shape[1] == 0:
+        # Defensive empty-data fallback: render a friendly placeholder
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5,
+                "EEG trace not available for this window\n"
+                "(window outside recording or empty data)",
+                ha="center", va="center", fontsize=11,
+                color="#888", transform=ax.transAxes)
+        ax.axis("off")
+        return fig
+
+    # Truncate to requested duration if longer; otherwise use as-is
+    n_show = min(data.shape[1], int(duration_s * sfreq))
+    seg = data[:, :n_show].astype(np.float64)
+    n_chan = seg.shape[0]
+    times = np.arange(seg.shape[1]) / sfreq + window_start_s
+
+    # Per-channel normalization for visual stacking
+    amplitude_uv = 100.0
+    seg_norm = np.zeros_like(seg)
+    for j in range(n_chan):
+        s = seg[j] - np.mean(seg[j])
+        scale = np.percentile(np.abs(s), 95) * 2 or 1.0
+        seg_norm[j] = s / scale * (amplitude_uv * 0.4)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    offsets = np.arange(n_chan) * amplitude_uv
+
+    # Event overlays — draw shaded regions FIRST so they sit behind the traces
+    if events:
+        for ev in events:
+            ev_start = float(ev.get("start_s", 0))
+            ev_dur = float(ev.get("duration_s", 0))
+            ev_end = ev_start + ev_dur
+            # Only draw if visible in window
+            if ev_end < window_start_s or ev_start > window_start_s + duration_s:
+                continue
+            color = ev.get("color", "#FFB1B1")
+            label = ev.get("label", "")
+            ax.axvspan(ev_start, ev_end, color=color, alpha=0.35,
+                       label=label or None)
+
+    # Channel traces
+    for j in range(n_chan):
+        ch_name = channel_names[j]
+        is_highlight = (highlight_channel is not None
+                        and ch_name.upper() == highlight_channel.upper())
+        color = "#A02020" if is_highlight else "black"
+        lw = 0.9 if is_highlight else 0.6
+        ax.plot(times, seg_norm[j] + offsets[-(j + 1)],
+                color=color, linewidth=lw)
+
+    ax.set_yticks(offsets)
+    ax.set_yticklabels(channel_names[::-1], fontsize=8)
+    ax.set_xlabel("Time (seconds from recording start)")
+    ax.set_xlim(window_start_s, window_start_s + duration_s)
+    ax.set_title(title)
+    ax.grid(True, axis="x", linestyle=":", alpha=0.3)
+    ax.set_facecolor("#FAFAFA")
+
+    # Legend if any labeled events
+    if events and any(ev.get("label") for ev in events):
+        handles, labels = ax.get_legend_handles_labels()
+        seen = set()
+        unique = [(h, l) for h, l in zip(handles, labels)
+                  if l and l not in seen and not seen.add(l)]
+        if unique:
+            ax.legend([h for h, _ in unique], [l for _, l in unique],
+                      loc="upper right", fontsize=8, framealpha=0.9)
+
+    plt.tight_layout()
+    return fig
+
+
 def plot_time_of_night(
     bin_centers_hours: list[float],
     counts_per_min: list[float],

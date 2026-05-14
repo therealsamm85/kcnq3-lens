@@ -30,7 +30,9 @@ from src.ai import (
     get_provider_class,
 )
 from src.reports import build_doctor_pdf, build_parent_pdf
-from src.utils.plots import plot_topomap, plot_time_of_night
+from src.utils.plots import (
+    plot_topomap, plot_time_of_night, plot_eeg_trace_with_events,
+)
 from src.insights import build_narrative
 from src.clinical.metadata import RecordingMetadata, to_summary_lines
 from src.longitudinal import (
@@ -789,6 +791,7 @@ if mode == "quickstart":
             st.session_state["qs_findings"] = qs_findings
             st.session_state["qs_findings_age"] = qs_age
             st.session_state["qs_findings_variant"] = qs_variant
+            st.session_state["qs_rec_path"] = str(qs_rec.path)
 
     qs_findings = st.session_state.get("qs_findings")
 
@@ -861,6 +864,137 @@ if mode == "quickstart":
             st.markdown("#### ❓ Questions for your child's doctor")
             for r in recs[:5]:
                 st.markdown(f"- {r}")
+
+        # ── v0.10: Live EEG-trace viewer with event overlays ────────────
+        st.markdown("---")
+        st.markdown("#### 🔬 See the actual EEG — with markers showing what we found")
+        st.caption(
+            "This is the raw brainwave recording your child's EEG technicians "
+            "see. The pink shaded regions are events our algorithms flagged "
+            "(spikes, bursts). The red trace is the channel where activity "
+            "was strongest."
+        )
+
+        # Build event list from bursts (most visually striking)
+        bursts_info = qs_findings.get("bursts", {})
+        longest_bursts = bursts_info.get("longest_bursts", []) or []
+        primary_ch = bursts_info.get("primary_channel", "Pz")
+
+        if longest_bursts:
+            # Picker: which event to view
+            event_options = []
+            for i, b in enumerate(longest_bursts[:10]):
+                t = b.get("start_s", 0)
+                d = b.get("duration_s", 0)
+                ch = b.get("peak_channel", "?")
+                n_inv = b.get("n_channels_involved", 0)
+                hh = int(t // 3600)
+                mm = int((t % 3600) // 60)
+                ss = int(t % 60)
+                event_options.append(
+                    f"#{i+1}: {hh:02d}:{mm:02d}:{ss:02d} — "
+                    f"{d:.1f}s burst on {ch} ({n_inv}/19 channels involved)"
+                )
+
+            picked = st.selectbox(
+                "Pick an event to view",
+                options=event_options,
+                index=0,
+                key="qs_event_pick",
+            )
+            picked_idx = event_options.index(picked)
+            picked_burst = longest_bursts[picked_idx]
+
+            burst_start = float(picked_burst.get("start_s", 0))
+            burst_dur = float(picked_burst.get("duration_s", 5))
+            # Window: 5s before burst, burst, 5s after — but at least 20s wide
+            view_padding = max(5.0, (20 - burst_dur) / 2)
+            window_start = max(0.0, burst_start - view_padding)
+            window_duration = burst_dur + 2 * view_padding
+
+            # Re-load the recording (it's already loaded in qs_rec, but we
+            # may be on a re-render after analyze finished — get_eeg_data
+            # works from the loaded recording)
+            rec_path = st.session_state.get("qs_rec_path", "")
+            try:
+                if qs_rec is None and rec_path:
+                    with st.spinner("Loading recording for trace view..."):
+                        qs_rec = load_eeg(rec_path)
+
+                # Get full data for the window
+                eeg_indices = qs_rec.eeg_channel_indices
+                eeg_names = [qs_rec.channel_names[c] for c in eeg_indices]
+
+                # Read the epochs covering the window — clamp to recording bounds
+                first_ep = max(0, int(window_start / 30))
+                last_ep = min(qs_rec.n_epochs,
+                              int((window_start + window_duration) / 30) + 1)
+                if last_ep <= first_ep:
+                    last_ep = min(qs_rec.n_epochs, first_ep + 1)
+
+                segments = []
+                for ep_idx, d in qs_rec.iter_epochs(
+                    epoch_seconds=30,
+                    start=first_ep, end=last_ep,
+                ):
+                    segments.append(d[eeg_indices])
+                if segments:
+                    import numpy as _np
+                    full_data = _np.concatenate(segments, axis=1)
+                    # Adjust window_start relative to first_ep
+                    relative_start_s = window_start - first_ep * 30
+                    n_show = int(window_duration * qs_rec.sfreq)
+                    s_idx = int(relative_start_s * qs_rec.sfreq)
+                    e_idx = min(full_data.shape[1], s_idx + n_show)
+                    view_data = full_data[:, s_idx:e_idx]
+
+                    events_for_overlay = [{
+                        "start_s": burst_start,
+                        "duration_s": burst_dur,
+                        "label": f"Detected burst ({burst_dur:.1f}s)",
+                        "color": "#FFB1B1",
+                    }]
+
+                    fig = plot_eeg_trace_with_events(
+                        data=view_data,
+                        channel_names=eeg_names,
+                        sfreq=qs_rec.sfreq,
+                        window_start_s=window_start,
+                        duration_s=(view_data.shape[1] / qs_rec.sfreq),
+                        events=events_for_overlay,
+                        title=(
+                            f"Event #{picked_idx + 1}: {burst_dur:.1f}s burst "
+                            f"at {int(burst_start // 3600):02d}:"
+                            f"{int((burst_start % 3600) // 60):02d}:"
+                            f"{int(burst_start % 60):02d}"
+                        ),
+                        highlight_channel=picked_burst.get("peak_channel", primary_ch),
+                    )
+                    st.pyplot(fig, use_container_width=True)
+                    plt.close(fig)
+
+                    # Helpful explanation under the plot
+                    n_inv = picked_burst.get("n_channels_involved", 0)
+                    dom_freq = picked_burst.get("dominant_freq_hz", 0)
+                    st.info(
+                        f"💡 What you're seeing: 19 stacked brainwave channels "
+                        f"over {window_duration:.0f} seconds. The **{burst_dur:.1f}s "
+                        f"pink shaded region** is the event the algorithm "
+                        f"flagged. The **red trace** is the channel where "
+                        f"activity was strongest "
+                        f"(**{picked_burst.get('peak_channel', '?')}**). "
+                        f"This burst involved **{n_inv} of 19 channels** "
+                        f"at a dominant frequency of **{dom_freq:.1f} Hz**."
+                    )
+                else:
+                    st.warning("Could not load EEG segment for this event.")
+            except Exception as e:
+                st.warning(f"EEG trace viewer unavailable: {e}")
+        else:
+            st.caption(
+                "No sustained burst events were detected — nothing to "
+                "highlight in the raw trace."
+            )
 
         # Download PDF
         st.markdown("---")
