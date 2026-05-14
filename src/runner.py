@@ -17,6 +17,10 @@ from .analyses import (
     compute_spike_morphology,
     compute_time_of_night,
     assess_quality,
+    compute_sleep_stages,
+    compute_swi,
+    compute_state_split,
+    compute_synchrony,
 )
 from .analyses.topography import summarize_topography
 from .analyses.spindles import summarize_spindles
@@ -25,6 +29,10 @@ from .analyses.bursts import summarize_bursts
 from .analyses.morphology import summarize_morphology
 from .analyses.time_of_night import summarize_time_of_night
 from .analyses.quality import summarize_quality
+from .analyses.sleep_stages import summarize_sleep_stages
+from .analyses.swi import summarize_swi
+from .analyses.state_split import summarize_state_split
+from .analyses.synchrony import summarize_synchrony
 
 
 def run_all_analyses(
@@ -137,7 +145,44 @@ def run_all_analyses(
         findings["time_of_night"] = summarize_time_of_night(tn)
     except Exception as e:
         errors["time_of_night"] = str(e)
-    _emit("time_of_night", 1.0)
+    _emit("time_of_night", 0.92)
+
+    # --- 7. Sleep stages (v0.5) ---
+    sleep_stage_result = None
+    try:
+        sleep_stage_result = compute_sleep_stages(rec)
+        findings["sleep_stages"] = summarize_sleep_stages(sleep_stage_result)
+    except Exception as e:
+        errors["sleep_stages"] = str(e)
+    _emit("sleep_stages", 0.95)
+
+    # --- 8. Formal SWI per stage (v0.5) — depends on sleep_stages ---
+    if sleep_stage_result is not None:
+        try:
+            swi = compute_swi(rec, sleep_stage_result)
+            findings["swi"] = summarize_swi(swi)
+        except Exception as e:
+            errors["swi"] = str(e)
+    _emit("swi", 0.97)
+
+    # --- 9. State split — wake vs sleep spike rate (v0.5) ---
+    if sleep_stage_result is not None:
+        try:
+            ss = compute_state_split(rec, sleep_stage_result)
+            findings["state_split"] = summarize_state_split(ss)
+        except Exception as e:
+            errors["state_split"] = str(e)
+    _emit("state_split", 0.98)
+
+    # --- 10. Synchrony / spread (v0.5) ---
+    try:
+        syn = compute_synchrony(
+            rec, start_epoch=sleep_start_epoch, end_epoch=sleep_end_epoch
+        )
+        findings["synchrony"] = summarize_synchrony(syn)
+    except Exception as e:
+        errors["synchrony"] = str(e)
+    _emit("synchrony", 1.0)
 
     findings["errors"] = errors
     return findings

@@ -81,6 +81,61 @@ def plot_topomap(
     return fig
 
 
+def plot_eeg_trace(
+    data: np.ndarray,
+    channel_names: list[str],
+    sfreq: float,
+    title: str = "",
+    duration_s: float = 10.0,
+    figsize: tuple[float, float] = (10, 8),
+    amplitude_uv: float = 100.0,
+):
+    """Render a clinical-style multi-channel EEG trace.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Shape (n_channels, n_samples). Each row is one EEG channel.
+    channel_names : list[str]
+        Same length as data.shape[0].
+    sfreq : float
+        Sampling rate in Hz.
+    title : str
+        Plot title.
+    duration_s : float
+        Display duration; uses only the first duration_s of data.
+    amplitude_uv : float
+        Visual amplitude scale per channel — channels are stacked vertically
+        with this nominal separation. The data is scaled to fit.
+    """
+    n_chan, n_samples = data.shape
+    n_show = min(n_samples, int(duration_s * sfreq))
+    seg = data[:, :n_show].astype(np.float64)
+    times = np.arange(n_show) / sfreq
+
+    # Normalize each channel: subtract mean, scale to ±amplitude_uv/2
+    # using each channel's own peak-to-peak (so visually all channels fit)
+    seg_norm = np.zeros_like(seg)
+    for j in range(n_chan):
+        s = seg[j] - np.mean(seg[j])
+        scale = np.percentile(np.abs(s), 95) * 2 or 1.0  # avoid div-by-zero
+        seg_norm[j] = s / scale * (amplitude_uv * 0.4)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    offsets = np.arange(n_chan) * amplitude_uv
+    for j in range(n_chan):
+        ax.plot(times, seg_norm[j] + offsets[-(j + 1)], color="black", linewidth=0.6)
+    ax.set_yticks(offsets)
+    ax.set_yticklabels(channel_names[::-1], fontsize=8)
+    ax.set_xlabel("Time (s)")
+    ax.set_xlim(0, n_show / sfreq)
+    ax.set_title(title)
+    ax.grid(True, axis="x", linestyle=":", alpha=0.3)
+    ax.set_facecolor("#FAFAFA")
+    plt.tight_layout()
+    return fig
+
+
 def plot_time_of_night(
     bin_centers_hours: list[float],
     counts_per_min: list[float],

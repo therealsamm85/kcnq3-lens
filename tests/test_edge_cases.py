@@ -264,6 +264,114 @@ except Exception as e:
     check("Sleep detect on 5-min recording doesn't crash", False, str(e))
 
 
+# ─── 9. v0.5 analyses — synthetic-data smoke + edge cases ───────────────────
+section("v0.5 — sleep_stages / SWI / state_split / synchrony")
+
+from src.analyses import (
+    compute_sleep_stages, compute_swi, compute_state_split, compute_synchrony,
+)
+from src.analyses.sleep_stages import summarize_sleep_stages, SleepStageResult
+from src.analyses.swi import summarize_swi
+from src.analyses.state_split import summarize_state_split
+from src.analyses.synchrony import summarize_synchrony
+
+# Use the synthetic short-recording rec we created earlier (5 min, 19 ch)
+try:
+    ss = compute_sleep_stages(rec)
+    check("compute_sleep_stages returns same length as n_epochs",
+          len(ss.epoch_labels) == rec.n_epochs)
+    check("Sleep stages method recorded",
+          ss.method in ("yasa", "fallback_delta_alpha", "fallback_no_channel"))
+except Exception as e:
+    check("compute_sleep_stages doesn't crash", False, str(e))
+
+# SWI with empty stage labels
+try:
+    fake_ss = SleepStageResult(
+        epoch_labels=["W"] * rec.n_epochs, epoch_seconds=30,
+        confidence="fallback", stage_minutes={"W": 5, "N1": 0, "N2": 0, "N3": 0, "REM": 0},
+        sleep_efficiency_pct=0, n_nrem_cycles_estimated=0,
+        channel_used="Cz", method="fallback_delta_alpha",
+    )
+    swi = compute_swi(rec, fake_ss)
+    check("SWI on all-wake recording returns 0 SWI for NREM stages",
+          swi.swi_nrem_combined == 0.0)
+    check("SWI csws_criterion_met is False when N3 is empty",
+          swi.csws_criterion_met == False)
+except Exception as e:
+    check("compute_swi doesn't crash on all-wake input", False, str(e))
+
+# State split when wake is empty (avoid div-by-zero edge)
+try:
+    fake_ss2 = SleepStageResult(
+        epoch_labels=["N2"] * rec.n_epochs, epoch_seconds=30,
+        confidence="fallback", stage_minutes={"W": 0, "N1": 0, "N2": 5, "N3": 0, "REM": 0},
+        sleep_efficiency_pct=100, n_nrem_cycles_estimated=0,
+        channel_used="Cz", method="fallback_delta_alpha",
+    )
+    sp = compute_state_split(rec, fake_ss2)
+    check("State split handles zero-wake without div-by-zero",
+          sp.activation_factor >= 0)
+except Exception as e:
+    check("State split handles zero-wake", False, str(e))
+
+# Synchrony on short window
+try:
+    syn = compute_synchrony(rec, start_epoch=0, end_epoch=10)
+    check("compute_synchrony returns a valid result",
+          syn.dominant_pattern in (
+              "focal", "regional", "bilateral_synchronous",
+              "bilateral_asynchronous", "generalized", "no_events"
+          ))
+except Exception as e:
+    check("compute_synchrony doesn't crash on short window", False, str(e))
+
+
+# ─── 10. PDF with v0.5 metrics ──────────────────────────────────────────────
+section("PDF — v0.5 metrics + methods section")
+
+minimal_v05 = {
+    "swi": {
+        "channel": "Pz",
+        "swi_per_stage_pct": {"W": 0, "N1": 5, "N2": 12, "N3": 32, "REM": 2},
+        "swi_nrem_combined_pct": 18.5,
+        "swi_n3_only_pct": 32.0,
+        "csws_criterion_met": False,
+        "csws_threshold_pct": 85.0,
+    },
+    "state_split": {
+        "channel": "Pz",
+        "wake_rate_per_min": 2.5, "nrem_rate_per_min": 18.0,
+        "rem_rate_per_min": 4.0, "activation_factor": 7.2,
+        "activation_label": "moderate",
+        "wake_minutes": 60, "nrem_minutes": 420, "rem_minutes": 60,
+    },
+    "synchrony": {
+        "primary_channel": "Pz", "n_events_analyzed": 200,
+        "focal_pct": 30, "regional_pct": 40,
+        "bilateral_synchronous_pct": 15,
+        "bilateral_asynchronous_pct": 10,
+        "generalized_pct": 5,
+        "dominant_pattern": "regional",
+        "median_channels_per_event": 4.5,
+    },
+}
+try:
+    pdf_no_v05 = build_doctor_pdf({"spindles": {"density_per_minute": 2}},
+                                    age_years=5)
+    pdf_v05 = build_doctor_pdf(minimal_v05, age_years=5)
+    check("Doctor PDF with v0.5 metrics generates", len(pdf_v05) > 1000)
+    # v0.5 PDF should be substantially larger due to methods section + new tables
+    # PDF streams are compressed, so the size diff from added sections is
+    # smaller than the raw text. +200 bytes is enough to confirm new tables
+    # were actually rendered (not just shared scaffolding).
+    check("v0.5 PDF is larger than minimal PDF (methods + new sections)",
+          len(pdf_v05) > len(pdf_no_v05) + 200,
+          f"v0.5={len(pdf_v05)}, minimal={len(pdf_no_v05)}")
+except Exception as e:
+    check("Doctor PDF with v0.5 metrics generates", False, str(e))
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
