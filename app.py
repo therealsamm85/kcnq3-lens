@@ -784,9 +784,11 @@ if mode == "quickstart":
             )
             status_text.empty()
             progress.empty()
+            # NOTE: don't write back qs_age / qs_variant — Streamlit owns those
+            # session_state keys because they're used as widget `key=` values.
             st.session_state["qs_findings"] = qs_findings
-            st.session_state["qs_age"] = qs_age
-            st.session_state["qs_variant"] = qs_variant
+            st.session_state["qs_findings_age"] = qs_age
+            st.session_state["qs_findings_variant"] = qs_variant
 
     qs_findings = st.session_state.get("qs_findings")
 
