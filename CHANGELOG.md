@@ -6,6 +6,30 @@ This project is in early development. The 0.x line is for the rare-epilepsy comm
 
 ---
 
+## [0.6.0] — 2026-05-14
+
+### Added — clinical report restructure (Impression first)
+
+- **Doctor PDF now opens with an Impression section** — one-paragraph clinician-readable summary built rule-based from findings (`src/clinical/impression.py`). Hedged phrasing ("consistent with", "raises concern for") — never diagnoses. Followed by a Recommendations / questions-to-discuss section pulled from matched patterns.
+- **Recording metadata** (`src/clinical/metadata.py`): RecordingMetadata dataclass captures patient label, age, sex, variant, recording date / time-of-day / indication, current medications, last medication change date, days since last seizure, technologist notes. Surfaces in PDF header and feeds the Impression generator.
+- **Sidebar form** in Streamlit for entering metadata at analysis time.
+
+### Added — sleep architecture metrics
+
+- **`src/analyses/sleep_architecture.py`**: builds on v0.5 sleep stages to produce REM latency, WASO (Wake After Sleep Onset), sleep fragmentation index (transitions per hour), count and mean duration of complete NREM cycles, first-cycle N3 minutes, total sleep time, sleep onset / final awakening times.
+- Integrated into the doctor PDF as a new section. Sleep architecture metrics answer the "sleep quality" questions independent of spike findings.
+
+### Test suite
+
+- 61/61 tests pass (was 52).
+- 9 new v0.6 tests: RecordingMetadata roundtrip, empty-findings impression, empty-findings recommendations, sleep_architecture all-wake handling, sleep_architecture REM-latency / cycle / first-cycle-N3 computation.
+
+### Version
+
+0.5.0 → 0.6.0.
+
+---
+
 ## [0.5.0] — 2026-05-14
 
 ### Added (the five gaps a real pediatric neurologist asked for)
@@ -143,6 +167,8 @@ Both fixes verified with the end-to-end smoke test; full pipeline still passes.
 
 | Version | Smoke test | Edge-case suite | Streamlit boot | New file?  |
 |---------|------------|-----------------|----------------|------------|
+| 0.6.0   | PASS       | 61/61 PASS      | PASS           | src/clinical/{metadata,impression}.py, src/analyses/sleep_architecture.py |
+| 0.5.1   | PASS       | 52/52 PASS      | PASS           | src/utils/sanitize.py |
 | 0.5.0   | PASS       | 37/37 PASS      | PASS           | src/analyses/{sleep_stages,swi,state_split,synchrony}.py |
 | 0.4.1   | PASS       | 29/29 PASS      | PASS           | tests/test_edge_cases.py |
 | 0.4.0   | PASS       | n/a             | PASS           | src/insights/ |

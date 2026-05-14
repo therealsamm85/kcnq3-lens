@@ -528,6 +528,123 @@ except Exception as e:
     check("sleep_architecture with REM", False, str(e))
 
 
+# ─── 13. v0.7 — citations, negative findings, bootstrap, terminology, anonymize ─
+section("v0.7 — Clinical credibility modules")
+
+from src.clinical.citations import all_citations, get, get_short, CITATIONS
+from src.clinical.negative_findings import build_negative_findings
+from src.clinical.terminology import (
+    acns_pattern_for_burst, ilae_descriptor_for_synchrony,
+)
+from src.clinical import anonymize as anon_mod
+from src.utils.bootstrap import bootstrap_count_ci, format_ci
+
+# Citations
+check("Citations registry has core entries",
+      "tassinari_csws" in CITATIONS and "lacourse_yasa" in CITATIONS)
+check("get_short returns short form", get_short("tassinari_csws") == "Tassinari 1971")
+check("get returns Citation object", get("wamsley_spindles").pubmed_id == "22431760")
+check("Unknown citation key returns key itself", get_short("nonexistent") == "nonexistent")
+
+# Negative findings on rich findings
+rich_findings = {
+    "swi": {"csws_criterion_met": False, "swi_per_stage_pct": {"N3": 20},
+             "csws_threshold_pct": 85},
+    "synchrony": {"n_events_analyzed": 100, "generalized_pct": 5},
+    "morphology": {"pct_complex_spike_wave": 10},
+    "background": {"posterior_dominant_rhythm_hz": 9, "interpretation": "age_appropriate"},
+    "state_split": {"activation_factor": 1.2, "activation_label": "none"},
+    "bursts": {"n_bursts_10s_or_longer": 0},
+    "quality": {"overall_grade": "A", "n_good_channels": 18, "n_total_channels": 19},
+    "spindles": {"interpretation": "in", "density_per_minute": 4,
+                  "age_normative_range": (3, 5)},
+}
+neg = build_negative_findings(rich_findings)
+check("Negative findings on healthy EEG produces multiple items", len(neg) >= 5)
+check("Negative findings on empty input returns empty list",
+      build_negative_findings({}) == [])
+
+# Terminology
+check("ACNS RDA classification for 2 Hz",
+      "Delta" in acns_pattern_for_burst(2.0))
+check("ACNS RTA classification for 6 Hz",
+      "Theta" in acns_pattern_for_burst(6.0))
+check("ILAE focal label correct",
+      "Focal" in ilae_descriptor_for_synchrony("focal"))
+check("ILAE unknown pattern returns id",
+      ilae_descriptor_for_synchrony("zzz_unknown") == "zzz_unknown")
+
+# Bootstrap CI
+ci = bootstrap_count_ci([1.0, 2.0, 3.0, 4.0, 5.0], aggregate="mean", n_bootstrap=500)
+check("Bootstrap CI point estimate is mean", abs(ci.point_estimate - 3.0) < 1e-6)
+check("Bootstrap CI low < high", ci.ci_low < ci.ci_high)
+check("Empty input bootstrap doesn't crash",
+      bootstrap_count_ci([]).point_estimate == 0.0)
+check("format_ci renders sane string",
+      "95% CI" in format_ci(ci, ndigits=2, unit="/min"))
+
+# Anonymization — synthesize tiny EDF and NK files
+import tempfile, struct
+tmpdir = Path(tempfile.gettempdir()) / "kcnq3-anon-test"
+tmpdir.mkdir(exist_ok=True)
+
+# Tiny "EDF" header for anonymization sanity check
+fake_edf = tmpdir / "fake.edf"
+edf_header = (b"0       " +
+              b"REAL_PATIENT_NAME M 01-JAN-2000 P0001                                       " +  # 80 bytes patient
+              b"Startdate 14-MAY-2026 X RecID                                                " +  # 80 bytes recording
+              b"\x00" * 88)  # rest of 256-byte header
+edf_header = edf_header[:256].ljust(256, b"\x00")
+fake_edf.write_bytes(edf_header)
+try:
+    res = anon_mod.anonymize_edf(fake_edf)
+    new_data = res.output_path.read_bytes()
+    check("EDF anonymizer strips patient field",
+          b"REAL_PATIENT_NAME" not in new_data)
+    check("EDF anonymizer creates output file", res.output_path.exists())
+    res.output_path.unlink()
+except Exception as e:
+    check("EDF anonymizer doesn't crash", False, str(e))
+fake_edf.unlink()
+
+# NK anonymization
+fake_nk = tmpdir / "fake.eeg"
+nk_header = b"EEG-1200A V01.00" + b"\x00" * 32 + b"PATIENT_X_NAME" + b"\x00" * (0x100 - 0x3E)
+nk_data = nk_header + b"\x00" * 1024
+fake_nk.write_bytes(nk_data)
+try:
+    res = anon_mod.anonymize_nihon_kohden(fake_nk)
+    new_data = res.output_path.read_bytes()
+    check("NK anonymizer strips patient region (0x30-0x80)",
+          b"PATIENT_X_NAME" not in new_data[0x30:0x80])
+    check("NK anonymizer preserves file signature",
+          new_data[:10] == b"EEG-1200A ")
+    res.output_path.unlink()
+except Exception as e:
+    check("NK anonymizer doesn't crash", False, str(e))
+fake_nk.unlink()
+
+# Auto-detect
+fake_edf2 = tmpdir / "auto.edf"
+fake_edf2.write_bytes(edf_header)
+try:
+    res = anon_mod.anonymize_auto(fake_edf2)
+    check("anonymize_auto dispatches to EDF",
+          res.output_path.exists() and len(res.fields_stripped) > 0)
+    res.output_path.unlink()
+except Exception as e:
+    check("anonymize_auto doesn't crash", False, str(e))
+fake_edf2.unlink()
+
+# Unsupported format
+fake_other = tmpdir / "x.xyz"
+fake_other.write_bytes(b"garbage")
+res = anon_mod.anonymize_auto(fake_other)
+check("Unsupported format returns warning, no crash",
+      len(res.warnings) > 0 and len(res.fields_stripped) == 0)
+fake_other.unlink()
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
