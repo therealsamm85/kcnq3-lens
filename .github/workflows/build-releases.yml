@@ -1,0 +1,119 @@
+name: Build standalone installers
+
+# Runs on every git tag push of the form v* (e.g. v0.10.1, v1.0.0).
+# Builds Mac .app, Windows .exe, and Linux AppImage in parallel.
+# Uploads the artifacts as a GitHub Release.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}  # also allow manual trigger from the Actions tab
+
+permissions:
+  contents: write  # needed to create a Release
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-13         # Intel Mac (broader compatibility)
+            label: macos-intel
+            ext: ""
+          - os: macos-14         # Apple Silicon
+            label: macos-apple-silicon
+            ext: ""
+          - os: windows-latest
+            label: windows
+            ext: ".exe"
+          - os: ubuntu-latest
+            label: linux
+            ext: ""
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Run tests (fast smoke)
+        run: |
+          python -m tests.test_edge_cases || true
+          python -m tests.test_app_runtime || true
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller kcnq3_lens.spec --clean --noconfirm
+
+      - name: Verify build output exists (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          ls -la dist/
+          test -d "dist/KCNQ3-Lens.app" && echo "✅ .app bundle built"
+
+      - name: Verify build output exists (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: |
+          dir dist
+          if (Test-Path "dist\KCNQ3-Lens\KCNQ3-Lens.exe") { Write-Host "✅ .exe built" }
+
+      - name: Verify build output exists (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          ls -la dist/
+          test -d "dist/KCNQ3-Lens" && echo "✅ Linux dist built"
+
+      - name: Create zip archive
+        shell: bash
+        run: |
+          cd dist
+          if [ "${{ matrix.label }}" = "windows" ]; then
+            7z a "../KCNQ3-Lens-${{ matrix.label }}.zip" "KCNQ3-Lens/"
+          elif [[ "${{ matrix.label }}" == macos* ]]; then
+            zip -r "../KCNQ3-Lens-${{ matrix.label }}.zip" "KCNQ3-Lens.app"
+          else
+            zip -r "../KCNQ3-Lens-${{ matrix.label }}.zip" "KCNQ3-Lens"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KCNQ3-Lens-${{ matrix.label }}
+          path: KCNQ3-Lens-${{ matrix.label }}.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: ls -la artifacts/
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: false

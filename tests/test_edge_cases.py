@@ -955,6 +955,56 @@ except Exception as e:
     check("Empty-findings prompt", False, str(e))
 
 
+# ─── 19. v0.11 — sample data helper + PyInstaller artifacts ─────────────────
+section("v0.11 — Sample data downloader + packaging artifacts")
+
+from scripts.download_sample_data import (
+    sample_path, default_sample_dir, sample_description, is_cached,
+    SAMPLE_URL, EXPECTED_SIZE_BYTES,
+)
+
+# Module imports and basic config
+check("download_sample_data module imports", True)
+check("SAMPLE_URL is PhysioNet CHB-MIT",
+      "physionet.org" in SAMPLE_URL and "chbmit" in SAMPLE_URL)
+check("Expected size is set (>30 MB)",
+      EXPECTED_SIZE_BYTES > 30 * 1024 * 1024)
+
+# Sample path computation
+test_data_env = Path(tempfile.mkdtemp(prefix="kcnq3_sample_"))
+os.environ["KCNQ3_LENS_DATA"] = str(test_data_env)
+try:
+    p = sample_path()
+    check("sample_path respects KCNQ3_LENS_DATA env var",
+          str(test_data_env) in str(p))
+    check("is_cached() returns False before download", not is_cached())
+except Exception as e:
+    check("sample_path lookup", False, str(e))
+finally:
+    shutil.rmtree(test_data_env, ignore_errors=True)
+    os.environ.pop("KCNQ3_LENS_DATA", None)
+
+# sample_description returns proper dict
+desc = sample_description()
+check("sample_description returns dict with required fields",
+      all(k in desc for k in ("name", "source", "url", "subject",
+                                "duration_hours", "channels", "license",
+                                "citation")))
+
+# PyInstaller spec file exists
+spec_path = Path(__file__).parent.parent / "kcnq3_lens.spec"
+check("kcnq3_lens.spec exists", spec_path.exists())
+
+# launch_app.py entry point exists
+launch_path = Path(__file__).parent.parent / "scripts" / "launch_app.py"
+check("scripts/launch_app.py exists", launch_path.exists())
+
+# GitHub Actions workflow exists
+workflow_path = (Path(__file__).parent.parent
+                  / ".github" / "workflows" / "build-releases.yml")
+check(".github/workflows/build-releases.yml exists", workflow_path.exists())
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
