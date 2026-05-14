@@ -645,6 +645,104 @@ check("Unsupported format returns warning, no crash",
 fake_other.unlink()
 
 
+# ─── 14. v0.8 — Longitudinal storage / diary / trends + CI integration ─────
+section("v0.8 — Longitudinal + CI integration")
+
+import tempfile
+import os
+
+from src.longitudinal import (
+    StoredEntry, save_entry, load_all_entries as load_long,
+    DiaryEntry, append_entry as append_diary, load_diary,
+    build_trends_table, get_metric_series, METRICS,
+)
+
+# Use isolated temp dir
+test_data_dir = Path(tempfile.mkdtemp(prefix="kcnq3_test_long_"))
+os.environ["KCNQ3_LENS_DATA"] = str(test_data_dir)
+
+# Save 2 entries and load them back
+e1 = StoredEntry(
+    recording_date="2026-01-15", label="pre",
+    findings={"morphology": {"events_per_minute": 25.0}},
+)
+e2 = StoredEntry(
+    recording_date="2026-03-15", label="post",
+    findings={"morphology": {"events_per_minute": 10.0}},
+)
+try:
+    p1 = save_entry(e1)
+    p2 = save_entry(e2)
+    check("StoredEntry save creates files",
+          p1.exists() and p2.exists())
+    loaded = load_long()
+    check("StoredEntry roundtrip preserves count", len(loaded) == 2)
+    check("Loaded entries sorted by date",
+          loaded[0].recording_date < loaded[1].recording_date)
+except Exception as e:
+    check("Longitudinal storage roundtrip", False, str(e))
+
+# Trends table extraction
+trends = build_trends_table(loaded)
+check("build_trends_table returns one row per entry", len(trends) == 2)
+check("Trends table contains spike_rate_per_min", "spike_rate_per_min" in trends[0])
+
+# Metric series extraction
+dates, vals = get_metric_series(loaded, "spike_rate_per_min")
+check("get_metric_series returns correct dates", dates == ["2026-01-15", "2026-03-15"])
+check("get_metric_series returns float values",
+      vals == [25.0, 10.0])
+
+# Unknown metric returns empty
+dates2, vals2 = get_metric_series(loaded, "nonexistent_metric")
+check("Unknown metric returns empty lists", dates2 == [] and vals2 == [])
+
+# Diary
+diary_path = Path(tempfile.mktemp(suffix=".jsonl"))
+e_d = DiaryEntry(date="2026-05-13", word_count=10, new_milestone="said Apfel")
+try:
+    append_diary(e_d, path=diary_path)
+    loaded_d = load_diary(path=diary_path)
+    check("Diary append + load roundtrip", len(loaded_d) == 1)
+    check("Diary entry word_count preserved", loaded_d[0].word_count == 10)
+    check("Diary entry milestone preserved",
+          loaded_d[0].new_milestone == "said Apfel")
+except Exception as e:
+    check("Diary roundtrip", False, str(e))
+if diary_path.exists():
+    diary_path.unlink()
+
+# Cleanup test dir
+import shutil
+shutil.rmtree(test_data_dir, ignore_errors=True)
+os.environ.pop("KCNQ3_LENS_DATA", None)
+
+# Bootstrap CI integration in morphology
+import numpy as np
+np.random.seed(0)
+mini_data = np.random.randn(1, 200 * 60 * 5).astype(np.float32) * 50
+mini_rec = EEGRecording(
+    path=Path("/synth"), sfreq=200, n_channels=1, duration_s=300,
+    channel_names=["Pz"], n_channels_in_file=1, eeg_channel_indices=[0],
+    format_name="synth",
+)
+mini_rec._full_data = mini_data
+
+from src.analyses import compute_spike_morphology
+from src.analyses.morphology import summarize_morphology
+
+m = compute_spike_morphology(mini_rec, start_epoch=0, end_epoch=10)
+s = summarize_morphology(m)
+check("Morphology summary includes CI low",
+      "events_per_minute_ci_low" in s)
+check("Morphology summary includes CI high",
+      "events_per_minute_ci_high" in s)
+if s.get("events_per_minute_ci_low") is not None:
+    check("CI low <= point estimate <= CI high",
+          s["events_per_minute_ci_low"] <= s["events_per_minute"]
+          <= s["events_per_minute_ci_high"])
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
