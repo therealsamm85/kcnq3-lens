@@ -1,32 +1,25 @@
-"""Longitudinal storage — save findings + metadata across multiple recordings.
+"""Longitudinal storage — recordings of a child's brain across time.
 
-The goal: a family with multiple EEGs (pre-treatment, post-Sultiam, post-
-Amitriptylin, follow-up at 6 months, etc.) should be able to track the
-evolution of their child's brain over time. This module persists each
-analysis run as a JSON file on disk, indexed by recording date.
+v0.12+: backed by SQLite (see `db.py`). The public API
+(`save_entry`, `load_all_entries`, `delete_entry`, `StoredEntry`) is
+preserved bit-for-bit so existing callers — `app.py`, the longitudinal
+tracker, and the test suite — do not need to change.
 
-Default storage location: `~/.kcnq3-lens/recordings/` — local-only,
-privacy-preserving. User can override.
+The first call into this module from a given DB will silently import
+any legacy JSON recordings from `recordings/*.json` into SQLite, so
+upgrading from v0.11 → v0.12 is automatic and lossless. Legacy files
+are kept on disk (not deleted) until the user verifies the migration.
 
-Each saved entry has:
-- `recording_date`: ISO date string (YYYY-MM-DD)
-- `label`: free-text label ("pre-Sultiam", "post-Amitriptylin month 3", etc.)
-- `findings`: full findings dict from `run_all_analyses`
-- `metadata`: RecordingMetadata fields (current meds, indication, etc.)
-- `saved_at`: ISO timestamp when the entry was written
-
-The diary module appends to a SEPARATE file because it's edited more
-frequently than recordings are run.
+Privacy: storage is local-only. No network calls. Same as before.
 """
 
 from __future__ import annotations
 
-import json
-import os
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from . import db as _db
 
 
 @dataclass
@@ -54,63 +47,66 @@ class StoredEntry:
 
 
 def default_storage_dir() -> Path:
-    """Default per-user storage location."""
-    base = Path(os.environ.get("KCNQ3_LENS_DATA",
-                                 str(Path.home() / ".kcnq3-lens")))
-    return base / "recordings"
+    """Legacy alias — returns the directory containing the SQLite DB."""
+    return _db.default_db_path().parent
 
 
 def save_entry(
     entry: StoredEntry,
     storage_dir: Path | None = None,
 ) -> Path:
-    """Persist an entry to disk. Filename: '{recording_date}_{label-slug}.json'."""
-    if storage_dir is None:
-        storage_dir = default_storage_dir()
-    storage_dir = Path(storage_dir)
-    storage_dir.mkdir(parents=True, exist_ok=True)
-
-    entry.saved_at = datetime.now().isoformat(timespec="seconds")
-    slug = "".join(
-        c if c.isalnum() or c in "-_" else "_" for c in entry.label
-    )[:60]
-    fname = f"{entry.recording_date}_{slug}.json" if slug else f"{entry.recording_date}.json"
-    path = storage_dir / fname
-
-    # If a file with this name already exists, append a suffix
-    n = 1
-    while path.exists():
-        path = storage_dir / f"{entry.recording_date}_{slug}_{n}.json"
-        n += 1
-
-    path.write_text(json.dumps(entry.to_dict(), indent=2, default=str))
-    return path
+    """Persist a recording. Returns the DB file path (callers historically
+    treated this as a 'path that exists' check, which still holds)."""
+    db_path = _resolve(storage_dir)
+    _db.insert_recording(
+        recording_date=entry.recording_date,
+        label=entry.label,
+        source_filename=entry.source_filename,
+        findings=entry.findings,
+        metadata=entry.metadata,
+        saved_at=entry.saved_at or None,
+        db_path=db_path,
+    )
+    # Touch saved_at on the dataclass for caller visibility, mirroring
+    # the legacy contract.
+    if not entry.saved_at:
+        entry.saved_at = _db._now_iso()
+    return db_path
 
 
 def load_all_entries(storage_dir: Path | None = None) -> list[StoredEntry]:
-    """Load every stored entry, sorted by recording_date ascending."""
-    if storage_dir is None:
-        storage_dir = default_storage_dir()
-    storage_dir = Path(storage_dir)
-    if not storage_dir.exists():
-        return []
-    entries: list[StoredEntry] = []
-    for fpath in sorted(storage_dir.glob("*.json")):
-        try:
-            data = json.loads(fpath.read_text())
-            entries.append(StoredEntry.from_dict(data))
-        except (json.JSONDecodeError, OSError):
-            continue
-    entries.sort(key=lambda e: (e.recording_date, e.saved_at))
-    return entries
+    """Load every stored recording, sorted by date then save-time."""
+    db_path = _resolve(storage_dir)
+    rows = _db.list_recordings(db_path=db_path)
+    return [StoredEntry.from_dict(r) for r in rows]
 
 
 def delete_entry(filename: str, storage_dir: Path | None = None) -> bool:
-    """Delete a stored entry by filename. Returns True if deleted."""
+    """Delete a recording. `filename` may be a legacy
+    `{date}_{label}.json` filename (back-compat) or the literal string
+    representation of an integer row id."""
+    db_path = _resolve(storage_dir)
+    # Allow row-id deletion: e.g. "12" or "id:12"
+    raw = filename
+    if raw.startswith("id:"):
+        raw = raw[3:]
+    if raw.isdigit():
+        return _db.delete_recording(row_id=int(raw), db_path=db_path)
+    return _db.delete_recording(legacy_filename=filename, db_path=db_path)
+
+
+def _resolve(storage_dir: Path | None) -> Path:
+    """Map legacy 'storage_dir' (a directory) to a DB file path.
+
+    The legacy contract was: a directory containing JSON files. We map
+    that to: that directory's `kcnq3-lens.db` SQLite file. If callers
+    pass None, defaults apply via db.default_db_path().
+    """
     if storage_dir is None:
-        storage_dir = default_storage_dir()
-    path = Path(storage_dir) / filename
-    if path.exists() and path.is_file():
-        path.unlink()
-        return True
-    return False
+        return _db.default_db_path()
+    p = Path(storage_dir)
+    # If they passed a .db file directly, use it as-is.
+    if p.suffix == ".db":
+        return p
+    # Otherwise treat as a directory.
+    return p / "kcnq3-lens.db"

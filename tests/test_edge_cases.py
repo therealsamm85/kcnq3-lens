@@ -765,13 +765,22 @@ loaded_after_corrupt = load_long()
 check("Corrupt JSON file in storage dir is skipped (not crashed)",
       len(loaded_after_corrupt) == 1)
 
-# Corrupt JSONL line in diary is skipped
-diary_path_corrupt = harden_dir / "diary_corrupt.jsonl"
-with open(diary_path_corrupt, "w") as fh:
-    fh.write("{ corrupt line\n")
-    fh.write(json.dumps({"date": "2026-05-13", "word_count": 5}) + "\n")
-d_loaded = load_diary(path=diary_path_corrupt)
-check("Corrupt JSONL line in diary is skipped", len(d_loaded) == 1)
+# v0.12+: legacy diary.jsonl with a corrupt line is tolerated by the
+# one-shot SQLite migration.
+from src.longitudinal import db as _db_mod
+_db_mod.reset_init_cache_for_tests()
+diary_migr_dir = Path(_tempfile.mkdtemp(prefix="kcnq3_diary_migr_"))
+os.environ["KCNQ3_LENS_DATA"] = str(diary_migr_dir)
+(diary_migr_dir / "diary.jsonl").write_text(
+    "{ corrupt line\n"
+    + json.dumps({"date": "2026-05-13", "word_count": 5})
+    + "\n"
+)
+d_loaded = load_diary()
+check("Corrupt JSONL line in legacy diary migration is skipped",
+      len(d_loaded) == 1)
+# Restore harden_dir as the active KCNQ3_LENS_DATA for any later tests.
+os.environ["KCNQ3_LENS_DATA"] = str(harden_dir)
 
 # Non-existent storage dir returns []
 os.environ["KCNQ3_LENS_DATA"] = str(harden_dir / "does_not_exist")
@@ -1003,6 +1012,140 @@ check("scripts/launch_app.py exists", launch_path.exists())
 workflow_path = (Path(__file__).parent.parent
                   / ".github" / "workflows" / "build-releases.yml")
 check(".github/workflows/build-releases.yml exists", workflow_path.exists())
+
+
+# ─── v0.12 — SQLite local storage (load-bearing for federated registry) ─────
+section("v0.12 — SQLite local storage")
+
+from src.longitudinal import db as _sqldb
+import sqlite3 as _sqlite3
+import tempfile as _tf2
+
+# 1. Schema creation
+_sqldb.reset_init_cache_for_tests()
+v12_dir = Path(_tf2.mkdtemp(prefix="kcnq3_v12_"))
+os.environ["KCNQ3_LENS_DATA"] = str(v12_dir)
+
+stats0 = _sqldb.stats()
+check("v0.12 schema initialized at version 1",
+      stats0["schema_version"] == 1)
+check("v0.12 empty DB has 0 recordings", stats0["n_recordings"] == 0)
+check("v0.12 empty DB has 0 diary entries", stats0["n_diary"] == 0)
+check("v0.12 DB file path resolved", stats0["db_path"].endswith(".db"))
+
+# 2. Insert / list / delete recordings
+rid = _sqldb.insert_recording(
+    recording_date="2026-04-01", label="pre-X",
+    source_filename="test.edf",
+    findings={"morphology": {"events_per_minute": 5.0}},
+    metadata={"meds": ["sultiam"]},
+)
+check("v0.12 insert_recording returns positive id", rid > 0)
+recs = _sqldb.list_recordings()
+check("v0.12 list_recordings returns inserted row", len(recs) == 1)
+check("v0.12 findings JSON round-trips",
+      recs[0]["findings"].get("morphology", {}).get("events_per_minute") == 5.0)
+check("v0.12 metadata JSON round-trips",
+      recs[0]["metadata"].get("meds") == ["sultiam"])
+del_ok = _sqldb.delete_recording(row_id=rid)
+check("v0.12 delete_recording by id works", del_ok)
+check("v0.12 list_recordings is empty after delete",
+      len(_sqldb.list_recordings()) == 0)
+
+# 3. Diary insert / list
+did = _sqldb.insert_diary(date="2026-04-02", word_count=42,
+                            new_milestone="said 'Mama'")
+check("v0.12 insert_diary returns positive id", did > 0)
+diary_rows = _sqldb.list_diary()
+check("v0.12 list_diary returns inserted row", len(diary_rows) == 1)
+check("v0.12 diary word_count preserved",
+      diary_rows[0]["word_count"] == 42)
+
+# 4. Legacy JSON → SQLite migration (recordings + diary)
+_sqldb.reset_init_cache_for_tests()
+migr_dir = Path(_tf2.mkdtemp(prefix="kcnq3_migr_"))
+(migr_dir / "recordings").mkdir(parents=True, exist_ok=True)
+(migr_dir / "recordings" / "2026-01-01_pre.json").write_text(json.dumps({
+    "recording_date": "2026-01-01", "label": "pre",
+    "findings": {"morphology": {"events_per_minute": 12.0}},
+    "metadata": {"age_years": 5},
+    "saved_at": "2026-01-01T10:00:00",
+    "source_filename": "old.edf",
+}))
+(migr_dir / "recordings" / "2026-02-01_post.json").write_text(json.dumps({
+    "recording_date": "2026-02-01", "label": "post",
+    "findings": {"morphology": {"events_per_minute": 3.0}},
+}))
+(migr_dir / "diary.jsonl").write_text(
+    json.dumps({"date": "2026-01-15", "word_count": 30}) + "\n"
+    + json.dumps({"date": "2026-02-15", "word_count": 50,
+                    "new_milestone": "first sentence"}) + "\n"
+)
+os.environ["KCNQ3_LENS_DATA"] = str(migr_dir)
+post_stats = _sqldb.stats()
+check("v0.12 legacy JSON migration imports recordings",
+      post_stats["n_recordings"] == 2)
+check("v0.12 legacy JSONL migration imports diary",
+      post_stats["n_diary"] == 2)
+check("v0.12 migration is recorded as completed",
+      post_stats["legacy_json_migrated"] is True)
+
+# 5. Migration is idempotent (re-init does NOT double-import)
+_sqldb.reset_init_cache_for_tests()
+post_stats2 = _sqldb.stats()
+check("v0.12 second init does not re-import recordings",
+      post_stats2["n_recordings"] == 2)
+check("v0.12 second init does not re-import diary",
+      post_stats2["n_diary"] == 2)
+
+# 6. Public API back-compat: StoredEntry.save / load via wrapper
+_sqldb.reset_init_cache_for_tests()
+api_dir = Path(_tf2.mkdtemp(prefix="kcnq3_api_"))
+os.environ["KCNQ3_LENS_DATA"] = str(api_dir)
+e = StoredEntry(
+    recording_date="2026-05-01", label="wrapper-test",
+    findings={"swi": {"csws_criterion_met": False}},
+)
+returned_path = save_entry(e)
+check("v0.12 save_entry returns a .db path",
+      str(returned_path).endswith(".db"))
+check("v0.12 save_entry sets saved_at on the dataclass",
+      e.saved_at != "")
+loaded = load_long()
+check("v0.12 load_all_entries via wrapper returns inserted row",
+      len(loaded) == 1 and loaded[0].label == "wrapper-test")
+
+# 7. SQL injection resistance (parameter binding)
+e_inj = StoredEntry(
+    recording_date="2026-05-01",
+    label="x'; DROP TABLE recordings; --",
+    findings={},
+)
+save_entry(e_inj)
+remaining = load_long()
+check("v0.12 SQL-injection attempt is harmless (table still present)",
+      len(remaining) == 2)
+
+# 8. Corrupt legacy JSON file is skipped during migration, valid kept
+_sqldb.reset_init_cache_for_tests()
+corrupt_dir = Path(_tf2.mkdtemp(prefix="kcnq3_corrupt_"))
+(corrupt_dir / "recordings").mkdir(parents=True, exist_ok=True)
+(corrupt_dir / "recordings" / "bad.json").write_text("{ not json")
+(corrupt_dir / "recordings" / "good.json").write_text(json.dumps({
+    "recording_date": "2026-03-01", "label": "ok", "findings": {},
+}))
+os.environ["KCNQ3_LENS_DATA"] = str(corrupt_dir)
+c_stats = _sqldb.stats()
+check("v0.12 migration skips corrupt JSON, keeps valid",
+      c_stats["n_recordings"] == 1)
+
+# 9. WAL journal mode is active
+_sqldb.reset_init_cache_for_tests()
+wal_dir = Path(_tf2.mkdtemp(prefix="kcnq3_wal_"))
+os.environ["KCNQ3_LENS_DATA"] = str(wal_dir)
+with _sqldb.connect() as _conn:
+    mode = _conn.execute("PRAGMA journal_mode").fetchone()[0]
+check("v0.12 WAL journal mode enabled", mode.lower() == "wal")
 
 
 # ─── Final ───────────────────────────────────────────────────────────────────
