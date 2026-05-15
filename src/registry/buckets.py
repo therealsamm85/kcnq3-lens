@@ -290,6 +290,34 @@ def bucket_ied_rolandic(n: int | None) -> str | None:
     return "large"
 
 
+def bucket_ied_nrem_rate(rate: float | None) -> str | None:
+    """Map IED rate during NREM (per minute) to schema.IED_NREM_RATE_BUCKETS.
+
+    Clinically important for CSWS/ESES-spectrum evaluation.
+    Same thresholds as bucket_ied_rate; exposed separately for independent
+    NREM-vs-overall comparison in the registry.
+    """
+    if rate is None:
+        return None
+    try:
+        v = float(rate)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v < 0:
+        return None
+    if v == 0.0:
+        return "0"
+    if v < 1.0:
+        return "<1"
+    if v < 5.0:
+        return "1-5"
+    if v < 15.0:
+        return "5-15"
+    if v < 50.0:
+        return "15-50"
+    return ">50"
+
+
 # Re-exports for convenience.
 AGE_BUCKETS = _schema.AGE_BUCKETS
 DURATION_BUCKETS = _schema.DURATION_BUCKETS

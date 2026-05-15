@@ -57,7 +57,9 @@ from .sleep_stages import SleepStageResult
 _DISCLAIMER_EXTERNAL = (
     "RESEARCH USE ONLY — SpikeNet was trained on adult EEG (Jing 2020). "
     "Sensitivity in pediatric recordings is lower; benign centrotemporal "
-    "(Rolandic) spikes may be over-called. Non-commercial-research license."
+    "(Rolandic) spikes may be over-called. Non-commercial-research license. "
+    "NOTE: external SpikeNet path is STUBBED — real inference requires "
+    "user-supplied implementation."
 )
 
 _DISCLAIMER_ENSEMBLE = (
@@ -73,9 +75,26 @@ _ALLOWED_METHODS = frozenset({
 })
 
 # Channels considered "centrotemporal" for Rolandic-spike flagging.
-_CENTROTEMPORAL_CHS = frozenset({
-    "C3", "C4", "T3", "T4", "T7", "T8", "CP3", "CP4",
+# Covers 10-20 + 10-10 montages used in pediatric BCECTS recordings.
+_CENTROTEMPORAL_CHANNELS = frozenset({
+    # 10-20 standard
+    "C3", "C4", "T3", "T4",
+    # 10-10 equivalents
+    "T7", "T8", "C5", "C6",
+    # Adjacent involvement
+    "CP3", "CP4", "CP5", "CP6",
+    "FC3", "FC4",
+    # Parietal nearby
+    "P3", "P4",
 })
+# Keep backward-compat alias
+_CENTROTEMPORAL_CHS = _CENTROTEMPORAL_CHANNELS
+
+# Focal topography: <=4 channels involved at >=50% of primary-channel peak
+# amplitude. Absolute-count convention chosen for clinical interpretability
+# (focal vs regional vs generalized). Was 3 — bumped to 4 to handle
+# adjacent-pair spread.
+_FOCAL_MAX_CHANNELS = 4
 
 
 # ─── Result dataclass ─────────────────────────────────────────────────────────
@@ -338,6 +357,19 @@ def _is_centrotemporal_dominant(involved_channels: list[str]) -> bool:
     return ct_hits >= 1 and ct_hits >= len(involved_channels) / 2.0
 
 
+# ─── Typed stub exception for SpikeNet provenance (C2) ───────────────────────
+
+
+class _SpikeNetStubError(NotImplementedError):
+    """Stub-error with provenance attributes. Caller catches this and uses
+    .model_version, .model_license directly (no string parsing)."""
+
+    def __init__(self, msg: str, model_version: str, model_license: str):
+        super().__init__(msg)
+        self.model_version = model_version
+        self.model_license = model_license
+
+
 # ─── External SpikeNet path (stubbed inference) ──────────────────────────────
 
 
@@ -367,10 +399,12 @@ def _run_spikenet(
     if not p.exists():
         raise RuntimeError(f"weights file not found: {weights_path}")
 
-    # Hash the first 1 KiB for fast provenance (full file would be slow
-    # for typical ~50–200 MB checkpoints; first-KiB collision is
-    # vanishingly improbable for our purposes).
-    head = p.read_bytes()[:1024]
+    # Hash the first 1 KiB for fast provenance.
+    # Streamed open avoids loading a 50–200 MB checkpoint fully into RAM.
+    # NOTE: provenance label only — NOT collision-resistant against
+    # adversarial weights.
+    with p.open("rb") as fh:
+        head = fh.read(1024)
     weights_hash = hashlib.sha256(head).hexdigest()[:16]
     model_version = f"sha256:{weights_hash}"
     model_license = "non-commercial-research (SpikeNet, Jing 2020)"
@@ -379,12 +413,15 @@ def _run_spikenet(
     # it for transparency even though we don't run forward yet.
     _threshold = 0.7 if (age_years is not None and float(age_years) < 12.0) else 0.5  # noqa: F841
 
-    raise NotImplementedError(
+    raise _SpikeNetStubError(
         "External SpikeNet inference requires a user-supplied PyTorch "
         "model + weights compatible with bdsp-core/SpikeNet's ResNet "
         "architecture and 19-channel, 1-s, 128 Hz windowed input "
         "convention. See https://github.com/bdsp-core/SpikeNet. "
-        f"Weights provenance: {model_version}, license: {model_license}."
+        "external SpikeNet path is STUBBED — real inference requires "
+        "user-supplied implementation.",
+        model_version,
+        model_license,
     )
 
 
@@ -471,12 +508,19 @@ def _run_ensemble(
         involved, ch_count = _topography_at_peak(
             multi_signal, ch_names, sfreq, t_f, primary_name,
         )
-        r3 = 1 if 0 < ch_count <= 3 else 0
+        r3 = 1 if 0 < ch_count <= _FOCAL_MAX_CHANNELS else 0
 
         rules_passed = (r1, r2, r3)
         total = r1 + r2 + r3
         if total == 0:
             continue
+
+        # Record rules_passed count BEFORE pediatric confidence promotion.
+        # This is used by the agreement metric (C1): pediatric promotion is a
+        # display decision, not a match decision — we don't want it to inflate
+        # the agreement percentage.
+        rules_passed_pre_pediatric = total
+
         if total == 3:
             confidence = "high"
         elif total == 2:
@@ -488,10 +532,13 @@ def _run_ensemble(
             if pediatric:
                 confidence = "medium"
 
+        # Rolandic flag is informational for any age — BCECTS peaks at 7-10
+        # but can extend to 14, and retrospective lookback in young adults is
+        # also valid. The age_appropriateness_flag (drift_warning) is the
+        # age-specific signal; this flag is purely topographic/morphologic.
         likely_rolandic = (
             _is_centrotemporal_dominant(involved)
             and category in ("simple_spike", "sharp_wave")
-            and pediatric
         )
 
         kept.append({
@@ -499,6 +546,7 @@ def _run_ensemble(
             "category": category,
             "confidence": confidence,
             "rules_passed": list(rules_passed),
+            "rules_passed_pre_pediatric": rules_passed_pre_pediatric,
             "hf_burst_ratio": round(hf_ratio, 4),
             "channels_involved": involved,
             "channel_count": ch_count,
@@ -597,18 +645,16 @@ def compute_ied_ml(
             # Should never reach here while inference is stubbed
             notes.append("spikenet_inference_returned_unexpectedly")
             chosen = "ensemble_heuristic"
-        except NotImplementedError as e:
+        except _SpikeNetStubError as e:
             warnings.append(f"spikenet_stub:{type(e).__name__}")
-            # Provenance was computed before the raise — extract from message.
-            try:
-                msg = str(e)
-                if "sha256:" in msg:
-                    tag = msg.split("sha256:", 1)[1].split(",", 1)[0].split()[0]
-                    model_version = f"sha256:{tag}"
-                if "non-commercial-research" in msg:
-                    model_license = "non-commercial-research (SpikeNet, Jing 2020)"
-            except Exception:
-                pass
+            # Provenance attributes are set directly on the typed exception —
+            # no string parsing needed.
+            model_version = e.model_version
+            model_license = e.model_license
+            notes.append(
+                "external SpikeNet path is STUBBED — real inference requires "
+                "user-supplied implementation"
+            )
             # Fall back to ensemble if morphology events are available
             if morphology_events is not None:
                 chosen = "ensemble_heuristic"
@@ -674,17 +720,23 @@ def compute_ied_ml(
 
         per_ch = _per_channel_rates(events, duration_min)
 
-        # Agreement metric: how many morphology events resulted in a
-        # kept ensemble event with confidence >= medium?
-        n_morph = len(morphology_events or [])
-        if n_morph > 0:
-            n_match = sum(
-                1 for ev in events
-                if ev.get("confidence") in ("medium", "high")
-            )
-            agreement = round(100.0 * n_match / n_morph, 1)
-        else:
-            agreement = 0.0
+        # Agreement metric (C1): fraction of processable morphology events that
+        # resulted in an ensemble event with rules_passed_pre_pediatric >= 2.
+        # Denominator uses only processable events (valid finite time_s in range)
+        # to avoid penalizing for malformed inputs.
+        # Pediatric promotion (low→medium confidence) is a display decision only
+        # and must NOT inflate the agreement percentage.
+        n_morph_processable = sum(
+            1 for e in (morphology_events or [])
+            if isinstance(e.get("time_s"), (int, float))
+            and math.isfinite(float(e["time_s"]))
+            and 0 <= float(e["time_s"]) < rec.duration_s
+        )
+        n_matches = sum(
+            1 for ev in events
+            if ev.get("rules_passed_pre_pediatric", 0) >= 2
+        )
+        agreement = round(100.0 * n_matches / max(n_morph_processable, 1), 1)
 
         nrem_rate = _nrem_rate(events, sleep_stages)
         notes.append(_DISCLAIMER_ENSEMBLE)

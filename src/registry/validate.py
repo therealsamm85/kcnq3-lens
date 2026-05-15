@@ -219,6 +219,7 @@ def _validate_findings(f: Any) -> list[str]:
         "ied_n_rolandic_benign_bucket": (
             lambda v: v in _schema.IED_ROLANDIC_BUCKETS
         ),
+        "ied_nrem_rate_bucket": lambda v: v in _schema.IED_NREM_RATE_BUCKETS,
     }
 
     # Keys handled by dedicated sub-validators (excluded from unknown-key check)

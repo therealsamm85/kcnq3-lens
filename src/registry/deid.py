@@ -370,6 +370,22 @@ def _extract_ied_rolandic_bucket(f: dict) -> str | None:
     return _buckets.bucket_ied_rolandic(n)
 
 
+def _extract_ied_nrem_rate_bucket(f: dict) -> str | None:
+    """H5 (option a): expose IED NREM rate as a bucketed registry field.
+
+    Clinically important for CSWS/ESES-spectrum evaluation. The raw
+    nrem_rate_per_min float from IEDDetectionResult is bucketed identically
+    to the overall IED rate, enabling registry-level NREM-vs-overall comparison.
+    """
+    ied = f.get("ied_ml") if isinstance(f, dict) else None
+    if not isinstance(ied, dict):
+        return None
+    rate = ied.get("nrem_rate_per_min")
+    if rate is None or not _schema._is_nonneg_finite(rate):
+        return None
+    return _buckets.bucket_ied_nrem_rate(float(rate))
+
+
 def _extract_hfo_pct_on_spike_bucket(f: dict) -> str | None:
     hfo = f.get("hfo_ripples") if isinstance(f, dict) else None
     if not isinstance(hfo, dict):
@@ -430,6 +446,7 @@ _EXTRACTORS_V2_ADDITIONAL: dict[str, Callable[[dict], Any]] = {
     "ied_age_flag": _extract_ied_age_flag,
     "ied_agreement_bucket": _extract_ied_agreement_bucket,
     "ied_n_rolandic_benign_bucket": _extract_ied_rolandic_bucket,
+    "ied_nrem_rate_bucket": _extract_ied_nrem_rate_bucket,
 }
 
 # Default extractors (v2)

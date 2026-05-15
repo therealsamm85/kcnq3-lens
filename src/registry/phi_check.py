@@ -109,6 +109,7 @@ _SKIP_PATHS = frozenset({
     "$.findings.ied_age_flag",
     "$.findings.ied_agreement_bucket",
     "$.findings.ied_n_rolandic_benign_bucket",
+    "$.findings.ied_nrem_rate_bucket",
 })
 
 

@@ -264,6 +264,14 @@ def run_all_analyses(
             method="auto",
             age_years=age_years,
         )
+        # H8: surface stub-fallback to user so it is visible in live runs.
+        if ied.method == "ensemble_heuristic" and any(
+            "spikenet_stub" in w for w in (ied.warnings or [])
+        ):
+            print(
+                f"WARN: external_spikenet path stubbed; "
+                f"using ensemble_heuristic with model_version={ied.model_version!r}"
+            )
         findings["ied_ml"] = summarize_ied_ml(ied)
         findings["_ied_events"] = ied.events
     except Exception as e:

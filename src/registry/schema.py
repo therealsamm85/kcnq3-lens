@@ -180,6 +180,8 @@ IED_AGE_FLAGS: frozenset[str] = frozenset({
     "ok", "drift_warning", "untested",
 })
 IED_ROLANDIC_BUCKETS: tuple[str, ...] = ("0", "small", "medium", "large")
+# NREM IED rate buckets — clinically relevant for CSWS/ESES-spectrum evaluation.
+IED_NREM_RATE_BUCKETS: tuple[str, ...] = ("0", "<1", "1-5", "5-15", "15-50", ">50")
 
 
 @dataclass(frozen=True)
