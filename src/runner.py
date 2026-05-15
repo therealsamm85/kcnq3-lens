@@ -39,6 +39,7 @@ from .analyses.sleep_architecture import summarize_sleep_architecture
 from .analyses.slow_waves import summarize_slow_waves
 from .analyses.hfo_ripples import compute_hfo_ripples, summarize_hfo_ripples
 from .analyses.coupling import compute_so_spindle_coupling, summarize_so_spindle_coupling
+from .analyses.ied_ml import compute_ied_ml, summarize_ied_ml
 from .clinical.impression import build_impression, build_recommendations
 from .clinical.negative_findings import build_negative_findings
 from .utils.sanitize import safe_round_dict
@@ -252,6 +253,21 @@ def run_all_analyses(
         findings["coupling"] = summarize_so_spindle_coupling(coupling)
     except Exception as e:
         findings["coupling"] = {"available": False, "error": str(e)}
+
+    # --- 11e. Automated IED detection (v0.13.3) — Tier 2 ---
+    try:
+        ied = compute_ied_ml(
+            rec,
+            sleep_stages=sleep_stage_result,
+            morphology_events=findings.get("_morphology_events"),
+            weights_path=None,
+            method="auto",
+            age_years=age_years,
+        )
+        findings["ied_ml"] = summarize_ied_ml(ied)
+        findings["_ied_events"] = ied.events
+    except Exception as e:
+        findings["ied_ml"] = {"available": False, "error": str(e)}
 
     # --- 12. Clinical impression + recommendations (v0.6) ---
     # Built from all preceding findings; deterministic, no LLM.

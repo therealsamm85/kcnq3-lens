@@ -20,6 +20,9 @@ from .hfo_ripples import compute_hfo_ripples, summarize_hfo_ripples, HFORippleRe
 from .coupling import (
     compute_so_spindle_coupling, summarize_so_spindle_coupling, CouplingResult,
 )
+from .ied_ml import (
+    compute_ied_ml, summarize_ied_ml, IEDDetectionResult,
+)
 
 __all__ = [
     "compute_topography", "TopographyResult",
@@ -38,4 +41,5 @@ __all__ = [
     "compute_slow_waves", "SlowWaveResult",
     "compute_hfo_ripples", "summarize_hfo_ripples", "HFORippleResult",
     "compute_so_spindle_coupling", "summarize_so_spindle_coupling", "CouplingResult",
+    "compute_ied_ml", "summarize_ied_ml", "IEDDetectionResult",
 ]

@@ -166,6 +166,21 @@ SW_PTP_BUCKETS: tuple[str, ...] = ("<75", "75-150", "150-250", ">250")
 
 HFO_RATE_BUCKETS: tuple[str, ...] = ("0", "<1", "1-5", "5-15", ">15")
 
+# v0.13.3 — IED detection fields (additive in schema v2).
+IED_METHODS: frozenset[str] = frozenset({
+    "external_spikenet", "ensemble_heuristic", "unavailable",
+})
+IED_RATE_BUCKETS: tuple[str, ...] = (
+    "0", "<1", "1-5", "5-15", "15-50", ">50",
+)
+IED_AGREEMENT_BUCKETS: tuple[str, ...] = (
+    "<50", "50-75", "75-90", ">90",
+)
+IED_AGE_FLAGS: frozenset[str] = frozenset({
+    "ok", "drift_warning", "untested",
+})
+IED_ROLANDIC_BUCKETS: tuple[str, ...] = ("0", "small", "medium", "large")
+
 
 @dataclass(frozen=True)
 class FieldSpec:

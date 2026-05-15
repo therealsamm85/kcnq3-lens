@@ -223,6 +223,73 @@ def bucket_hfo_rate(rate: float | None) -> str | None:
     return ">15"
 
 
+# ─── v0.13.3 — IED bucket helpers ────────────────────────────────────────────
+
+
+def bucket_ied_rate(rate: float | None) -> str | None:
+    """Map IED rate per minute to one of schema.IED_RATE_BUCKETS.
+
+    The "0" bucket is exact zero.
+    """
+    if rate is None:
+        return None
+    try:
+        v = float(rate)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v < 0:
+        return None
+    if v == 0.0:
+        return "0"
+    if v < 1.0:
+        return "<1"
+    if v < 5.0:
+        return "1-5"
+    if v < 15.0:
+        return "5-15"
+    if v < 50.0:
+        return "15-50"
+    return ">50"
+
+
+def bucket_ied_agreement(pct: float | None) -> str | None:
+    """Map agreement-with-morphology percent to schema.IED_AGREEMENT_BUCKETS."""
+    if pct is None:
+        return None
+    try:
+        v = float(pct)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v < 0 or v > 100.5:
+        return None
+    if v < 50.0:
+        return "<50"
+    if v < 75.0:
+        return "50-75"
+    if v < 90.0:
+        return "75-90"
+    return ">90"
+
+
+def bucket_ied_rolandic(n: int | None) -> str | None:
+    """Map count of likely-Rolandic flagged events to a coarse bucket."""
+    if n is None:
+        return None
+    try:
+        v = int(n)
+    except (TypeError, ValueError):
+        return None
+    if v < 0:
+        return None
+    if v == 0:
+        return "0"
+    if v < 10:
+        return "small"
+    if v < 50:
+        return "medium"
+    return "large"
+
+
 # Re-exports for convenience.
 AGE_BUCKETS = _schema.AGE_BUCKETS
 DURATION_BUCKETS = _schema.DURATION_BUCKETS

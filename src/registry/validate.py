@@ -211,6 +211,14 @@ def _validate_findings(f: Any) -> list[str]:
         "hfo_pct_on_spike_bucket": (
             lambda v: v in ("<10", "10-50", "50-90", ">90")
         ),
+        # v0.13.3 — IED detection (all optional)
+        "ied_method": lambda v: v in _schema.IED_METHODS,
+        "ied_rate_bucket": lambda v: v in _schema.IED_RATE_BUCKETS,
+        "ied_age_flag": lambda v: v in _schema.IED_AGE_FLAGS,
+        "ied_agreement_bucket": lambda v: v in _schema.IED_AGREEMENT_BUCKETS,
+        "ied_n_rolandic_benign_bucket": (
+            lambda v: v in _schema.IED_ROLANDIC_BUCKETS
+        ),
     }
 
     # Keys handled by dedicated sub-validators (excluded from unknown-key check)

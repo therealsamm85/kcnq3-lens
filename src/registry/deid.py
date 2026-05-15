@@ -324,6 +324,52 @@ def _extract_hfo_available(f: dict) -> bool | None:
     return bool(v) if isinstance(v, bool) else None
 
 
+def _extract_ied_method(f: dict) -> str | None:
+    ied = f.get("ied_ml") if isinstance(f, dict) else None
+    if not isinstance(ied, dict):
+        return None
+    v = ied.get("method")
+    return v if v in _schema.IED_METHODS else None
+
+
+def _extract_ied_rate_bucket(f: dict) -> str | None:
+    ied = f.get("ied_ml") if isinstance(f, dict) else None
+    if not isinstance(ied, dict):
+        return None
+    rate = ied.get("rate_per_minute")
+    if rate is None or not _schema._is_nonneg_finite(rate):
+        return None
+    return _buckets.bucket_ied_rate(float(rate))
+
+
+def _extract_ied_age_flag(f: dict) -> str | None:
+    ied = f.get("ied_ml") if isinstance(f, dict) else None
+    if not isinstance(ied, dict):
+        return None
+    v = ied.get("age_appropriateness_flag")
+    return v if v in _schema.IED_AGE_FLAGS else None
+
+
+def _extract_ied_agreement_bucket(f: dict) -> str | None:
+    ied = f.get("ied_ml") if isinstance(f, dict) else None
+    if not isinstance(ied, dict):
+        return None
+    pct = ied.get("agreement_with_morphology_pct")
+    if pct is None or not _schema._is_nonneg_finite(pct):
+        return None
+    return _buckets.bucket_ied_agreement(float(pct))
+
+
+def _extract_ied_rolandic_bucket(f: dict) -> str | None:
+    ied = f.get("ied_ml") if isinstance(f, dict) else None
+    if not isinstance(ied, dict):
+        return None
+    n = ied.get("n_likely_rolandic_benign")
+    if not isinstance(n, int) or n < 0:
+        return None
+    return _buckets.bucket_ied_rolandic(n)
+
+
 def _extract_hfo_pct_on_spike_bucket(f: dict) -> str | None:
     hfo = f.get("hfo_ripples") if isinstance(f, dict) else None
     if not isinstance(hfo, dict):
@@ -378,6 +424,12 @@ _EXTRACTORS_V2_ADDITIONAL: dict[str, Callable[[dict], Any]] = {
     "hfo_rate_bucket": _extract_hfo_rate_bucket,
     "hfo_available": _extract_hfo_available,
     "hfo_pct_on_spike_bucket": _extract_hfo_pct_on_spike_bucket,
+    # v0.13.3 — IED detection
+    "ied_method": _extract_ied_method,
+    "ied_rate_bucket": _extract_ied_rate_bucket,
+    "ied_age_flag": _extract_ied_age_flag,
+    "ied_agreement_bucket": _extract_ied_agreement_bucket,
+    "ied_n_rolandic_benign_bucket": _extract_ied_rolandic_bucket,
 }
 
 # Default extractors (v2)

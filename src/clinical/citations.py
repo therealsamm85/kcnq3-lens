@@ -249,6 +249,23 @@ CITATIONS: dict[str, Citation] = {
             "validates PLV as coupling metric in adults."
         ),
     ),
+    "jing_spikenet": Citation(
+        key="jing_spikenet",
+        short="Jing et al. 2020",
+        full=(
+            "Jing J, Sun H, Kim JA, et al. Development of Expert-Level "
+            "Automated Detection of Epileptiform Discharges During "
+            "Electroencephalogram Interpretation. JAMA Neurol "
+            "2020;77(1):103-108."
+        ),
+        pubmed_id="32049322",
+        url="https://pubmed.ncbi.nlm.nih.gov/32049322/",
+        note=(
+            "SpikeNet ResNet IED classifier trained on 9,571 adult EEGs. "
+            "Adult-validated; pediatric sensitivity is lower. "
+            "Non-commercial-research license on the public weights."
+        ),
+    ),
     "hahn_coupling_pediatric": Citation(
         key="hahn_coupling_pediatric",
         short="Hahn et al. 2020",
@@ -296,4 +313,5 @@ def methods_attribution() -> dict[str, str]:
         "slow_waves": "massimini_sw",
         "hfo_ripples": "staba_hfo",
         "coupling": "helfrich_coupling",
+        "ied_ml": "jing_spikenet",
     }

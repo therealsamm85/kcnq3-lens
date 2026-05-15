@@ -103,6 +103,12 @@ _SKIP_PATHS = frozenset({
     "$.findings.sw_method",
     "$.findings.hfo_rate_bucket",
     "$.findings.hfo_pct_on_spike_bucket",
+    # v0.13.3 — IED detection bucket fields (controlled vocabulary)
+    "$.findings.ied_method",
+    "$.findings.ied_rate_bucket",
+    "$.findings.ied_age_flag",
+    "$.findings.ied_agreement_bucket",
+    "$.findings.ied_n_rolandic_benign_bucket",
 })
 
 
