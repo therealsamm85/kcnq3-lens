@@ -139,6 +139,54 @@ CITATIONS: dict[str, Citation] = {
         url="https://pubmed.ncbi.nlm.nih.gov/24431986/",
         note="MNE-Python — file reading and signal processing primitives.",
     ),
+    "massimini_sw": Citation(
+        key="massimini_sw",
+        short="Massimini et al. 2004",
+        full=(
+            "Massimini M, Huber R, Ferrarelli F, Hill S, Tononi G. "
+            "The sleep slow oscillation as a traveling wave. "
+            "J Neurosci 2004;24(31):6862-6870."
+        ),
+        pubmed_id="15282274",
+        url="https://pubmed.ncbi.nlm.nih.gov/15282274/",
+        note=(
+            "Foundational slow-wave detection criteria: negative peak, "
+            "positive peak, and peak-to-peak amplitude thresholds."
+        ),
+    ),
+    "carrier_sw_dev": Citation(
+        key="carrier_sw_dev",
+        short="Carrier et al. 2011",
+        full=(
+            "Carrier J, Viens I, Poirier G, Robillard R, Lafortune M, "
+            "Vandewalle G, Martin N, Barakat M, Paquet J, Filipini D. "
+            "Sleep slow wave changes during the middle years of life. "
+            "Eur J Neurosci 2011;33(4):758-766."
+        ),
+        pubmed_id="20813192",
+        url="https://pubmed.ncbi.nlm.nih.gov/20813192/",
+        note=(
+            "Age-related decline in slow-wave amplitude and density across "
+            "middle adulthood. No pediatric norms included."
+        ),
+    ),
+    "kurth_pediatric_sw": Citation(
+        key="kurth_pediatric_sw",
+        short="Kurth et al. 2010",
+        full=(
+            "Kurth S, Ringli M, Geiger A, LeBourgeois M, Jenni OG, "
+            "Huber R. Mapping of cortical activity in the first two decades "
+            "of life: a high-density sleep electroencephalogram study. "
+            "J Neurosci 2010;30(40):13211-13219."
+        ),
+        pubmed_id="20534927",
+        url="https://pubmed.ncbi.nlm.nih.gov/20534927/",
+        note=(
+            "Developmental topography of slow-wave activity from childhood "
+            "to early adulthood (ages 2–20, high-density EEG). "
+            "Shows frontal predominance and developmental trajectory."
+        ),
+    ),
 }
 
 
@@ -166,4 +214,5 @@ def methods_attribution() -> dict[str, str]:
         "swi": "tassinari_csws",
         "background": "hagne_pdr",
         "morphology": "binnie_tci",   # for cognitive-relevance framing
+        "slow_waves": "massimini_sw",
     }

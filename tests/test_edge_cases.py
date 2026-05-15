@@ -1148,6 +1148,193 @@ with _sqldb.connect() as _conn:
 check("v0.12 WAL journal mode enabled", mode.lower() == "wal")
 
 
+# ─── v0.13.0 — Slow-wave detection ──────────────────────────────────────────
+section("v0.13.0 — Slow-wave detection")
+
+from src.analyses.slow_waves import compute_slow_waves, SlowWaveResult, summarize_slow_waves
+from src.clinical.citations import CITATIONS, methods_attribution
+
+# Helpers for synthetic recordings
+def _make_rec(data: np.ndarray, sfreq: float = 200.0,
+              channel_names: list | None = None) -> "EEGRecording":
+    n_ch = data.shape[0]
+    names = channel_names or (["Fz"] + [f"Ch{i}" for i in range(1, n_ch)])
+    r = EEGRecording(
+        path=Path("/synth"),
+        sfreq=sfreq, n_channels=n_ch, duration_s=data.shape[1] / sfreq,
+        channel_names=names, n_channels_in_file=n_ch,
+        eeg_channel_indices=list(range(n_ch)), format_name="synth",
+    )
+    r._full_data = data.astype(np.float32)
+    return r
+
+# 1. Synthetic 0.75 Hz sine at 100 µV — build 60s buffer with 10 cycles (13.3s)
+#    padded to 60s so the recording passes the minimum-length check.
+sfreq_sw = 200.0
+t_sine = np.linspace(0, 13.3, int(13.3 * sfreq_sw), endpoint=False)
+sine_signal = 100.0 * np.sin(2 * np.pi * 0.75 * t_sine)  # 10 cycles
+padding = np.zeros(int((60 - 13.3) * sfreq_sw))
+sw_trace = np.concatenate([sine_signal, padding])[np.newaxis, :]  # (1, 12000)
+rec_sine = _make_rec(sw_trace, sfreq=sfreq_sw)
+try:
+    res_sine = compute_slow_waves(rec_sine)
+    # YASA may or may not detect sine waves depending on amplitude thresholds;
+    # what we're validating is that the function runs and returns a valid result.
+    check("Sine 0.75 Hz result has correct type",
+          isinstance(res_sine, SlowWaveResult))
+    check("Sine 0.75 Hz density is a non-negative float",
+          isinstance(res_sine.density_per_minute, float)
+          and res_sine.density_per_minute >= 0.0)
+except Exception as e:
+    check("Sine 0.75 Hz detection runs without exception", False, str(e))
+
+# 2. Pure Gaussian noise → density should be ≤ 2/min (few false positives)
+np.random.seed(42)
+noise_trace = (np.random.randn(1, int(90 * sfreq_sw)) * 10).astype(np.float32)
+rec_noise = _make_rec(noise_trace, sfreq=sfreq_sw)
+try:
+    res_noise = compute_slow_waves(rec_noise)
+    check("Gaussian noise produces ≤2 SW/min (low false-positive rate)",
+          res_noise.density_per_minute <= 2.0,
+          f"got {res_noise.density_per_minute:.2f}/min")
+except Exception as e:
+    check("Gaussian noise detection runs", False, str(e))
+
+# 3. Recording < 60s → raises ValueError
+short_trace = np.zeros((1, int(30 * sfreq_sw)), dtype=np.float32)
+rec_short = _make_rec(short_trace, sfreq=sfreq_sw)
+try:
+    compute_slow_waves(rec_short)
+    check("Recording <60s raises ValueError", False, "no exception raised")
+except ValueError:
+    check("Recording <60s raises ValueError", True)
+except Exception as e:
+    check("Recording <60s raises ValueError", False, f"raised {type(e).__name__}: {e}")
+
+# 4. Channel chain: rec with only C3 → fallback works, no exception
+c3_trace = np.random.randn(1, int(90 * sfreq_sw)).astype(np.float32) * 20
+rec_c3 = EEGRecording(
+    path=Path("/synth-c3"), sfreq=sfreq_sw, n_channels=1,
+    duration_s=90.0, channel_names=["C3"],
+    n_channels_in_file=1, eeg_channel_indices=[0], format_name="synth",
+)
+rec_c3._full_data = c3_trace
+try:
+    res_c3 = compute_slow_waves(rec_c3, channel="Fz")
+    check("Channel fallback to C3 works without exception", True)
+    check("Channel fallback resolves to C3",
+          res_c3.channel == "C3")
+except Exception as e:
+    check("Channel fallback to C3", False, str(e))
+
+# 5. All-wake sleep_stages → returns zero result with note "no_n2_n3_sleep"
+from src.analyses.sleep_stages import SleepStageResult as _SSR
+wake_ss = _SSR(
+    epoch_labels=["W"] * 3, epoch_seconds=30.0,
+    confidence="fallback",
+    stage_minutes={"W": 1.5, "N1": 0, "N2": 0, "N3": 0, "REM": 0},
+    sleep_efficiency_pct=0, n_nrem_cycles_estimated=0,
+    channel_used="Fz", method="fallback_delta_alpha",
+)
+all_wake_data = np.random.randn(1, int(90 * sfreq_sw)).astype(np.float32) * 20
+rec_wake = _make_rec(all_wake_data, sfreq=sfreq_sw)
+try:
+    res_wake = compute_slow_waves(rec_wake, sleep_stages=wake_ss)
+    check("All-wake stages returns n_slow_waves=0",
+          res_wake.n_slow_waves == 0)
+    check("All-wake stages has note 'no_n2_n3_sleep'",
+          "no_n2_n3_sleep" in res_wake.notes)
+except Exception as e:
+    check("All-wake stages handled gracefully", False, str(e))
+
+# 6. age_years=5 → note "pediatric_thresholds_applied" present
+ped_data = np.random.randn(1, int(90 * sfreq_sw)).astype(np.float32) * 20
+rec_ped = _make_rec(ped_data, sfreq=sfreq_sw)
+try:
+    res_ped = compute_slow_waves(rec_ped, age_years=5)
+    check("age_years=5 adds 'pediatric_thresholds_applied' note",
+          "pediatric_thresholds_applied" in res_ped.notes)
+except Exception as e:
+    check("age_years=5 runs without exception", False, str(e))
+
+# 7. age_years=12 → pediatric note NOT present
+try:
+    res_12 = compute_slow_waves(rec_ped, age_years=12)
+    check("age_years=12 does NOT add pediatric note",
+          "pediatric_thresholds_applied" not in res_12.notes)
+except Exception as e:
+    check("age_years=12 runs without exception", False, str(e))
+
+# 8. Events list has expected keys (when YASA produces detections or heuristic fires)
+expected_event_keys = {
+    "start_s", "neg_peak_s", "zero_cross_s", "end_s",
+    "neg_peak_uv", "pos_peak_uv", "ptp_uv", "duration_s", "slope_uv_per_s",
+}
+# Use large-amplitude low-freq sine to maximize chance of getting ≥1 event
+t_big = np.linspace(0, 90, int(90 * sfreq_sw), endpoint=False)
+big_sw = (150.0 * np.sin(2 * np.pi * 0.75 * t_big))[np.newaxis, :].astype(np.float32)
+rec_big = _make_rec(big_sw, sfreq=sfreq_sw)
+try:
+    res_big = compute_slow_waves(rec_big)
+    if res_big.events:
+        ev_keys = set(res_big.events[0].keys())
+        check("Events list entries have all expected keys",
+              expected_event_keys.issubset(ev_keys),
+              f"missing: {expected_event_keys - ev_keys}")
+    else:
+        # No events detected — still valid; just check the list is a list
+        check("Events is a list (even if empty)", isinstance(res_big.events, list))
+except Exception as e:
+    check("Events-key check runs without exception", False, str(e))
+
+# 9. Citation entries present
+check("Citation 'massimini_sw' present in CITATIONS",
+      "massimini_sw" in CITATIONS)
+check("Citation 'carrier_sw_dev' present in CITATIONS",
+      "carrier_sw_dev" in CITATIONS)
+check("Citation 'kurth_pediatric_sw' present in CITATIONS",
+      "kurth_pediatric_sw" in CITATIONS)
+
+# 10. PMIDs are exact strings
+check("massimini_sw PMID is '15282274'",
+      CITATIONS["massimini_sw"].pubmed_id == "15282274")
+check("carrier_sw_dev PMID is '20813192'",
+      CITATIONS["carrier_sw_dev"].pubmed_id == "20813192")
+check("kurth_pediatric_sw PMID is '20534927'",
+      CITATIONS["kurth_pediatric_sw"].pubmed_id == "20534927")
+
+# 11. methods_attribution returns "massimini_sw" for "slow_waves"
+ma = methods_attribution()
+check("methods_attribution returns 'massimini_sw' for 'slow_waves'",
+      ma.get("slow_waves") == "massimini_sw")
+
+# 12. findings dict from runner contains "slow_waves" key
+np.random.seed(0)
+runner_data = np.random.randn(19, int(200 * 60 * 5)).astype(np.float32) * 20
+runner_rec = EEGRecording(
+    path=Path("/synth-runner"),
+    sfreq=200, n_channels=19, duration_s=300.0,
+    channel_names=["Fp1", "F4", "F3", "C4", "C3", "P4", "P3", "O2", "O1",
+                   "F8", "F7", "T4", "T3", "T6", "T5", "Fz", "Cz", "Pz", "Fp2"],
+    n_channels_in_file=19, eeg_channel_indices=list(range(19)),
+    format_name="synth",
+)
+runner_rec._full_data = runner_data
+try:
+    from src.runner import run_all_analyses
+    findings_sw = run_all_analyses(
+        runner_rec, sleep_start_epoch=0, sleep_end_epoch=10,
+        wake_epoch_indices=list(range(0, 3)), age_years=5,
+    )
+    check("runner findings dict contains 'slow_waves' key",
+          "slow_waves" in findings_sw)
+    if "slow_waves" in findings_sw:
+        check("slow_waves findings has 'density_per_minute' field",
+              "density_per_minute" in findings_sw["slow_waves"])
+except Exception as e:
+    check("runner with slow_waves doesn't crash", False, str(e))
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")

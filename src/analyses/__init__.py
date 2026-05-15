@@ -15,6 +15,7 @@ from .synchrony import compute_synchrony, SynchronyResult
 from .sleep_architecture import (
     compute_sleep_architecture, SleepArchitectureResult,
 )
+from .slow_waves import compute_slow_waves, SlowWaveResult
 
 __all__ = [
     "compute_topography", "TopographyResult",
@@ -30,4 +31,5 @@ __all__ = [
     "compute_state_split", "StateSplitResult",
     "compute_synchrony", "SynchronyResult",
     "compute_sleep_architecture", "SleepArchitectureResult",
+    "compute_slow_waves", "SlowWaveResult",
 ]

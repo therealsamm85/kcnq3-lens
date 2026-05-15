@@ -22,6 +22,7 @@ from .analyses import (
     compute_state_split,
     compute_synchrony,
     compute_sleep_architecture,
+    compute_slow_waves,
 )
 from .analyses.topography import summarize_topography
 from .analyses.spindles import summarize_spindles
@@ -35,6 +36,7 @@ from .analyses.swi import summarize_swi
 from .analyses.state_split import summarize_state_split
 from .analyses.synchrony import summarize_synchrony
 from .analyses.sleep_architecture import summarize_sleep_architecture
+from .analyses.slow_waves import summarize_slow_waves
 from .clinical.impression import build_impression, build_recommendations
 from .clinical.negative_findings import build_negative_findings
 from .utils.sanitize import safe_round_dict
@@ -196,6 +198,18 @@ def run_all_analyses(
             findings["sleep_architecture"] = summarize_sleep_architecture(arch)
         except Exception as e:
             errors["sleep_architecture"] = str(e)
+
+    # --- 11b. Slow-wave detection (v0.13.0) — Tier 2 ---
+    try:
+        sw = compute_slow_waves(
+            rec,
+            sleep_stages=sleep_stage_result,
+            channel="Fz",
+            age_years=age_years,
+        )
+        findings["slow_waves"] = summarize_slow_waves(sw)
+    except Exception as e:
+        errors["slow_waves"] = str(e)
 
     # --- 12. Clinical impression + recommendations (v0.6) ---
     # Built from all preceding findings; deterministic, no LLM.
