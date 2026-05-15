@@ -1335,6 +1335,273 @@ except Exception as e:
     check("runner with slow_waves doesn't crash", False, str(e))
 
 
+# ─── 20. v0.13.0 hardening patches (Opus review) ────────────────────────────
+section("v0.13.0 hardening — Opus review patches")
+
+import json as _json
+import math as _math
+import unittest.mock as _mock
+
+# Re-use the _make_rec helper defined in section v0.13.0 above.
+# Create a fresh 90s random recording for most tests.
+np.random.seed(7)
+_sfreq_h = 200.0
+_dur_h = 90.0
+_n_h = int(_dur_h * _sfreq_h)
+
+def _make_n2n3_stages(n_epochs: int, epoch_s: float = 30.0,
+                       first_n2: int = 0) -> "SleepStageResult":
+    """Return SleepStageResult with all epochs marked N2."""
+    from src.analyses.sleep_stages import SleepStageResult as _SSR2
+    labels = ["N2"] * n_epochs
+    return _SSR2(
+        epoch_labels=labels, epoch_seconds=epoch_s,
+        confidence="fallback",
+        stage_minutes={"W": 0, "N1": 0, "N2": n_epochs * epoch_s / 60,
+                       "N3": 0, "REM": 0},
+        sleep_efficiency_pct=100, n_nrem_cycles_estimated=1,
+        channel_used="Fz", method="fallback_delta_alpha",
+    )
+
+# --- Test 1: slow_waves findings is strict-JSON-serializable -----------------
+try:
+    _rdata = np.random.randn(1, _n_h).astype(np.float32) * 50
+    _rrec = _make_rec(_rdata, sfreq=_sfreq_h)
+    _res_j = compute_slow_waves(_rrec)
+    _summ_j = summarize_slow_waves(_res_j)
+    _wrapper = {"slow_waves": _summ_j}
+    _json.dumps(_wrapper, allow_nan=False)
+    check("(1) slow_waves summary is strict-JSON-serializable", True)
+except Exception as e:
+    check("(1) slow_waves summary is strict-JSON-serializable", False, str(e))
+
+# --- Test 2: 'events' NOT in summarize_slow_waves output ---------------------
+try:
+    _rdata2 = np.random.randn(1, _n_h).astype(np.float32) * 50
+    _rrec2 = _make_rec(_rdata2, sfreq=_sfreq_h)
+    _res2 = compute_slow_waves(_rrec2)
+    _summ2 = summarize_slow_waves(_res2)
+    check("(2) 'events' key NOT leaked into summarize_slow_waves() output",
+          "events" not in _summ2)
+except Exception as e:
+    check("(2) events not in summary", False, str(e))
+
+# --- Test 3: _slow_waves_events IS present in runner findings ----------------
+try:
+    from src.runner import run_all_analyses as _raa
+    np.random.seed(0)
+    _run_data = np.random.randn(19, int(200 * 60 * 5)).astype(np.float32) * 20
+    _run_rec = EEGRecording(
+        path=Path("/synth-harden"),
+        sfreq=200, n_channels=19, duration_s=300.0,
+        channel_names=["Fp1", "F4", "F3", "C4", "C3", "P4", "P3", "O2", "O1",
+                       "F8", "F7", "T4", "T3", "T6", "T5", "Fz", "Cz", "Pz", "Fp2"],
+        n_channels_in_file=19, eeg_channel_indices=list(range(19)),
+        format_name="synth",
+    )
+    _run_rec._full_data = _run_data
+    _run_findings = _raa(
+        _run_rec, sleep_start_epoch=0, sleep_end_epoch=10,
+        wake_epoch_indices=list(range(0, 3)), age_years=5,
+    )
+    check("(3) '_slow_waves_events' key present in runner findings",
+          "_slow_waves_events" in _run_findings)
+    check("(3) '_slow_waves_events' is a list",
+          isinstance(_run_findings.get("_slow_waves_events"), list))
+except Exception as e:
+    check("(3) _slow_waves_events present in findings", False, str(e))
+
+# --- Test 4: Signal with >5% NaN → no crash, note 'high_nan_fraction' --------
+try:
+    np.random.seed(1)
+    _nan_sig = np.random.randn(1, _n_h).astype(np.float32) * 50
+    # inject 10% NaN
+    _nan_indices = np.random.choice(_n_h, int(0.10 * _n_h), replace=False)
+    _nan_sig[0, _nan_indices] = float('nan')
+    _nan_rec = _make_rec(_nan_sig, sfreq=_sfreq_h)
+    _res_nan = compute_slow_waves(_nan_rec)
+    check("(4) Signal with 10% NaN — no crash", True)
+    check("(4) Signal with 10% NaN — note 'high_nan_fraction' present",
+          "high_nan_fraction" in _res_nan.notes)
+except Exception as e:
+    check("(4) Signal with 10% NaN", False, str(e))
+
+# --- Test 5: Signal with Inf → Inf-field events dropped, summary finite ------
+try:
+    np.random.seed(2)
+    _inf_sig = np.random.randn(1, _n_h).astype(np.float32) * 50
+    # Inject a single Inf spike (will be cleaned by nan_to_num guard)
+    _inf_sig[0, 1000] = float('inf')
+    _inf_rec = _make_rec(_inf_sig, sfreq=_sfreq_h)
+    _res_inf = compute_slow_waves(_inf_rec)
+    _summ_inf = summarize_slow_waves(_res_inf)
+    # All events must be finite (any Inf-field event is dropped)
+    _all_events_finite = all(
+        all(_math.isfinite(v) for v in ev.values() if isinstance(v, float))
+        for ev in _res_inf.events
+    )
+    check("(5) Events with Inf fields are dropped", _all_events_finite)
+    # Summary floats must be finite or None
+    _summary_ok = all(
+        v is None or (isinstance(v, float) and _math.isfinite(v))
+        or not isinstance(v, float)
+        for v in _summ_inf.values()
+    )
+    check("(5) Summary fields are finite or None after Inf in signal", _summary_ok)
+except Exception as e:
+    check("(5) Signal with Inf handling", False, str(e))
+
+# --- Test 6: age_years=NaN → adult thresholds + note 'age_years_was_nan' -----
+try:
+    np.random.seed(3)
+    _age_nan_sig = np.random.randn(1, _n_h).astype(np.float32) * 20
+    _age_nan_rec = _make_rec(_age_nan_sig, sfreq=_sfreq_h)
+    _res_age_nan = compute_slow_waves(_age_nan_rec, age_years=float('nan'))
+    check("(6) age_years=NaN — no crash", True)
+    check("(6) age_years=NaN — note 'age_years_was_nan' present",
+          "age_years_was_nan" in _res_age_nan.notes)
+    check("(6) age_years=NaN — pediatric note NOT added",
+          "pediatric_thresholds_applied" not in _res_age_nan.notes)
+except Exception as e:
+    check("(6) age_years=NaN handling", False, str(e))
+
+# --- Test 7: age_years=-1 → treated like None, no crash ---------------------
+try:
+    np.random.seed(3)
+    _age_neg_sig = np.random.randn(1, _n_h).astype(np.float32) * 20
+    _age_neg_rec = _make_rec(_age_neg_sig, sfreq=_sfreq_h)
+    _res_age_neg = compute_slow_waves(_age_neg_rec, age_years=-1)
+    check("(7) age_years=-1 — no crash", True)
+    check("(7) age_years=-1 — pediatric note NOT added",
+          "pediatric_thresholds_applied" not in _res_age_neg.notes)
+except Exception as e:
+    check("(7) age_years=-1 handling", False, str(e))
+
+# --- Test 8: Signal in Volt scale → note 'auto_scaled_volts_to_uv' ----------
+try:
+    np.random.seed(4)
+    # Scale a typical µV signal down to Volts (divide by 1e6)
+    _volt_sig = (np.random.randn(1, _n_h).astype(np.float32) * 50) / 1e6
+    _volt_rec = _make_rec(_volt_sig, sfreq=_sfreq_h)
+    _res_volt = compute_slow_waves(_volt_rec)
+    check("(8) Volt-scale signal — no crash", True)
+    check("(8) Volt-scale signal — note 'auto_scaled_volts_to_uv' present",
+          "auto_scaled_volts_to_uv" in _res_volt.notes)
+except Exception as e:
+    check("(8) Volt-scale signal handling", False, str(e))
+
+# --- Test 9: Channel 'fz' (lowercase) → resolves cleanly --------------------
+try:
+    np.random.seed(5)
+    _ch_sig = np.random.randn(1, _n_h).astype(np.float32) * 20
+    _ch_rec = _make_rec(_ch_sig, sfreq=_sfreq_h, channel_names=["Fz"])
+    _res_ch = compute_slow_waves(_ch_rec, channel="fz")
+    check("(9) channel='fz' lowercase — no crash", True)
+    check("(9) channel='fz' — resolved_channel is 'Fz'",
+          _res_ch.channel == "Fz")
+except Exception as e:
+    check("(9) channel='fz' handling", False, str(e))
+
+# --- Test 10: Determinism — two calls with same seed → identical events ------
+try:
+    np.random.seed(6)
+    _det_sig = np.random.randn(1, _n_h).astype(np.float32) * 50
+    _det_rec = _make_rec(_det_sig, sfreq=_sfreq_h)
+    _res_d1 = compute_slow_waves(_det_rec)
+    _res_d2 = compute_slow_waves(_det_rec)
+    check("(10) Determinism — n_slow_waves identical",
+          _res_d1.n_slow_waves == _res_d2.n_slow_waves)
+    _peaks_match = (
+        [round(e["neg_peak_s"], 4) for e in _res_d1.events]
+        == [round(e["neg_peak_s"], 4) for e in _res_d2.events]
+    )
+    check("(10) Determinism — neg_peak_s values identical",
+          _peaks_match)
+except Exception as e:
+    check("(10) Determinism check", False, str(e))
+
+# --- Test 11: C1 phantom slow-wave test — step discontinuity ----------------
+# Build two segments with a large DC step between them, separated by a gap.
+# Without the C1 fix the ringing from the step would produce phantom events
+# at the boundary. With the fix, events are restricted to N2 windows so any
+# boundary artifact is discarded.
+try:
+    np.random.seed(8)
+    _step_sfreq = 200.0
+    _seg_s = 30.0  # one epoch
+    _seg_n = int(_seg_s * _step_sfreq)
+    # seg1: low amplitude noise, seg2: same but 200 µV DC offset added
+    _seg1 = np.random.randn(_seg_n).astype(np.float32) * 5
+    _gap  = np.random.randn(int(30 * _step_sfreq)).astype(np.float32) * 5  # "Wake" gap
+    _seg2 = np.random.randn(_seg_n).astype(np.float32) * 5 + 200.0  # large step
+    _full = np.concatenate([_seg1, _gap, _seg2])[np.newaxis, :]  # shape (1, 3*seg_n)
+    _step_dur = _full.shape[1] / _step_sfreq
+    _step_rec = EEGRecording(
+        path=Path("/synth-step"),
+        sfreq=_step_sfreq, n_channels=1,
+        duration_s=_step_dur,
+        channel_names=["Fz"],
+        n_channels_in_file=1, eeg_channel_indices=[0], format_name="synth",
+    )
+    _step_rec._full_data = _full.astype(np.float32)
+
+    # Mark only epoch 0 and epoch 2 as N2 (non-adjacent; gap is epoch 1 = Wake)
+    from src.analyses.sleep_stages import SleepStageResult as _SSR3
+    _step_ss = _SSR3(
+        epoch_labels=["N2", "W", "N2"],
+        epoch_seconds=_seg_s,
+        confidence="fallback",
+        stage_minutes={"W": 0.5, "N1": 0, "N2": 1.0, "N3": 0, "REM": 0},
+        sleep_efficiency_pct=67, n_nrem_cycles_estimated=0,
+        channel_used="Fz", method="fallback_delta_alpha",
+    )
+    _res_step = compute_slow_waves(_step_rec, sleep_stages=_step_ss)
+
+    # The boundary between epoch 0 and epoch 2 has a large DC step.
+    # Any event whose neg_peak_s falls in the Wake gap [30s, 60s) must be absent.
+    _boundary_events = [
+        e for e in _res_step.events
+        if 30.0 <= e["neg_peak_s"] < 60.0
+    ]
+    check("(11) C1 fix — no slow-wave at step-discontinuity boundary",
+          len(_boundary_events) == 0,
+          f"found {len(_boundary_events)} boundary events")
+except Exception as e:
+    check("(11) C1 phantom slow-wave test", False, str(e))
+
+# --- Test 12: Heuristic-fallback explicit path --------------------------------
+try:
+    np.random.seed(9)
+    # 90s, 0.75 Hz, 100 µV — should produce detections with heuristic
+    _t_heur = np.linspace(0, 90, int(90 * _sfreq_h), endpoint=False)
+    _heur_sig = (80.0 * np.sin(2 * np.pi * 0.75 * _t_heur))[np.newaxis, :].astype(np.float32)
+    _heur_rec = _make_rec(_heur_sig, sfreq=_sfreq_h)
+
+    with _mock.patch(
+        "src.analyses.slow_waves._yasa_available", return_value=False
+    ):
+        _res_heur = compute_slow_waves(_heur_rec)
+
+    check("(12) Heuristic fallback — no crash",
+          isinstance(_res_heur, SlowWaveResult))
+    check("(12) Heuristic fallback — method == 'heuristic'",
+          _res_heur.method == "heuristic")
+    check("(12) Heuristic fallback — ≥1 slow wave detected",
+          _res_heur.n_slow_waves >= 1,
+          f"got {_res_heur.n_slow_waves}")
+    if _res_heur.events:
+        _heur_ev_keys = set(_res_heur.events[0].keys())
+        _expected_keys = {
+            "start_s", "neg_peak_s", "zero_cross_s", "end_s",
+            "neg_peak_uv", "pos_peak_uv", "ptp_uv", "duration_s", "slope_uv_per_s",
+        }
+        check("(12) Heuristic fallback — events have all 9 keys",
+              _expected_keys.issubset(_heur_ev_keys),
+              f"missing: {_expected_keys - _heur_ev_keys}")
+except Exception as e:
+    check("(12) Heuristic fallback path", False, str(e))
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")

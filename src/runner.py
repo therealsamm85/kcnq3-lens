@@ -201,13 +201,18 @@ def run_all_analyses(
 
     # --- 11b. Slow-wave detection (v0.13.0) — Tier 2 ---
     try:
+        _age = getattr(rec, 'age_years', None) or age_years
         sw = compute_slow_waves(
             rec,
             sleep_stages=sleep_stage_result,
             channel="Fz",
-            age_years=age_years,
+            age_years=_age,
         )
         findings["slow_waves"] = summarize_slow_waves(sw)
+        # C2: preserve raw events under a private key for v0.13.2 coupling.
+        # Keys prefixed with "_" are internal; the registry submission builder
+        # uses an explicit allowlist and will not export this field.
+        findings["_slow_waves_events"] = sw.events
     except Exception as e:
         errors["slow_waves"] = str(e)
 
