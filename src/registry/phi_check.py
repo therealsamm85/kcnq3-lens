@@ -51,9 +51,14 @@ _PAT_EMAIL = re.compile(
 # 7+ consecutive digits (MRNs, long IDs, phone-without-separator)
 _PAT_LONG_NUMBER = re.compile(r"\b\d{7,}\b")
 
-# Phone-like with separators
+# Phone-like with explicit phone markers — must include either '+' or
+# whitespace or parens. Pure dashed-digit sequences (uuid hex blocks,
+# date-like all-digit ids) are intentionally NOT matched here; they're
+# caught by the more specific date / long-number patterns instead.
 _PAT_PHONE = re.compile(
-    r"\b(?:\+?\d{1,3}[\s.-]?)?\(?\d{2,4}\)?[\s.-]?\d{3,4}[\s.-]?\d{3,4}\b"
+    r"(?:\+\d{1,3}[\s.-]?\d{2,4}[\s.-]?\d{3,4}[\s.-]?\d{3,4}"
+    r"|\(\d{2,4}\)[\s.-]?\d{3,4}[\s.-]?\d{3,4}"
+    r"|\b\d{2,4}\s\d{3,4}\s\d{3,4}\b)"
 )
 
 # Multi-segment path
@@ -76,6 +81,15 @@ _PAT_NARRATIVE = re.compile(
 # scanner threshold to leave margin.
 _MAX_STRING_LEN = 80
 
+# Paths that are already validated as opaque IDs (uuid4 regex in the
+# schema). The PHI scanner skips them — a uuid will contain digit runs
+# that look phone-like or MRN-like otherwise, and the dedicated regex
+# is the real authority on that field.
+_SKIP_PATHS = frozenset({
+    "$.submission_id",
+    "$.intervention.linked_pre_submission_id",
+})
+
 
 def scan_for_phi(obj: Any, *, path: str = "$") -> list[str]:
     """Walk a submission JSON and return a list of human-readable findings.
@@ -96,7 +110,8 @@ def scan_for_phi(obj: Any, *, path: str = "$") -> list[str]:
         for i, v in enumerate(obj):
             findings.extend(scan_for_phi(v, path=f"{path}[{i}]"))
     elif isinstance(obj, str):
-        findings.extend(_scan_string(obj, path))
+        if path not in _SKIP_PATHS:
+            findings.extend(_scan_string(obj, path))
     # Numbers, bools, None: no PHI risk.
 
     return findings
