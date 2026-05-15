@@ -136,12 +136,12 @@ def main():
           f"{sp_df['Frequency'].median():>10.1f}  -")
     print(f"  {'Runtime (s)':<25}  {our_time:>10.1f}  {yasa_time:>10.1f}  -")
 
-    print("\nAge-5 normative range: 3.0–5.0 spindles/min")
+    print("\nAge-5 normative range: 0.8–1.5 spindles/min (McClain 2016)")
     print(f"\nInterpretation:")
     for label, density in [("Ours", ours['density_per_minute']), ("YASA", density_yasa)]:
-        if density < 3.0:
+        if density < 0.8:
             verdict = "BELOW normative — reduced consolidation capacity"
-        elif density > 5.0:
+        elif density > 1.5:
             verdict = "ABOVE normative"
         else:
             verdict = "WITHIN normative"

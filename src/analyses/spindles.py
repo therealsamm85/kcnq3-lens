@@ -5,10 +5,19 @@ by the thalamocortical loop during N2 sleep. They are critical for memory
 consolidation. Reduced density correlates with worse cognitive outcomes in
 pediatric epilepsy.
 
-Normative ranges at Cz during N2:
-- Age 4–6:   3–5 spindles/min
-- Age 7–9:   4–6 spindles/min
-- Adults:    2–4 spindles/min (lower because N2 is a smaller fraction of sleep)
+Normative ranges at central derivations (C3/C4/Cz) during NREM2.
+Sources: McClain et al. 2016 (PMID 27110405; ages 2–5, n=8 longitudinal)
+and Kwon et al. 2023 (PMID 36719044; ages 0–18, n=567):
+- Age 2–5:   ~1 spindle/min (0.8–1.5)  — McClain 2016
+- Age 6–10:  ~1.5–2.5 spindles/min     — Kwon 2023 (rising)
+- Age 11–14: ~2.5–3.5 spindles/min     — Kwon 2023 (continued rise)
+- Adults:    ~2–4 spindles/min         — plateau after ~14
+
+NOTE: Older versions of this tool (≤ v0.11.0) cited a "3–5/min for age 5"
+range attributed to Wamsley 2012. That was incorrect — the Wamsley paper
+is on adult schizophrenia and contains no pediatric norms. The values
+above are from the actual pediatric literature and are roughly 3× lower
+at age 5 than previously claimed.
 
 Detection methods
 -----------------
@@ -56,18 +65,23 @@ class SpindleResult:
     method: str                # "yasa" or "heuristic"
 
 
+# Anchors from McClain 2016 (PMID 27110405) at ages 2-5 (≈1/min at C3/C4 NREM2)
+# and Kwon 2023 (PMID 36719044) for the developmental rise to adolescent plateau.
+# Ranges are ±~30% around the reported mean to account for inter-individual
+# variability seen in those cohorts.
 _AGE_NORMS = {
-    3: (2.5, 4.5),
-    4: (3.0, 5.0),
-    5: (3.0, 5.0),
-    6: (3.5, 5.5),
-    7: (4.0, 6.0),
-    8: (4.0, 6.0),
-    9: (4.0, 6.0),
-    10: (4.0, 6.0),
-    12: (3.5, 5.5),
-    15: (3.0, 5.0),
-    18: (2.5, 4.5),
+    2: (0.6, 1.3),
+    3: (0.7, 1.4),
+    4: (0.8, 1.5),
+    5: (0.8, 1.5),
+    6: (1.0, 2.0),
+    7: (1.2, 2.5),
+    8: (1.5, 2.8),
+    9: (1.8, 3.0),
+    10: (2.0, 3.2),
+    12: (2.2, 3.5),
+    15: (2.5, 3.8),
+    18: (2.0, 4.0),
 }
 
 

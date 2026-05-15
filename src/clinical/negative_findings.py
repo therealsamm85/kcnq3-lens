@@ -97,7 +97,7 @@ def build_negative_findings(findings: dict[str, Any]) -> list[str]:
     sp = findings.get("spindles") or {}
     if sp.get("interpretation") == "in":
         density = sp.get("density_per_minute", 0)
-        norm = sp.get("age_normative_range", (3, 5))
+        norm = sp.get("age_normative_range", (0.8, 1.5))
         out.append(
             f"No spindle reduction: spindle density is age-appropriate "
             f"at {density:.1f}/min (norm {norm[0]}-{norm[1]}/min)."

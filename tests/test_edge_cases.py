@@ -543,7 +543,7 @@ from src.utils.bootstrap import bootstrap_count_ci, format_ci
 check("Citations registry has core entries",
       "tassinari_csws" in CITATIONS and "lacourse_yasa" in CITATIONS)
 check("get_short returns short form", get_short("tassinari_csws") == "Tassinari 1971")
-check("get returns Citation object", get("wamsley_spindles").pubmed_id == "22431760")
+check("get returns Citation object", get("mcclain_spindles").pubmed_id == "27110405")
 check("Unknown citation key returns key itself", get_short("nonexistent") == "nonexistent")
 
 # Negative findings on rich findings

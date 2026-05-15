@@ -403,9 +403,10 @@ def build_doctor_pdf(
         "trained on adult PSG — pediatric output is heuristic). "
         "Fallback: delta/alpha ratio thresholding with 3-state output "
         "(W / N1 / N2).<br/><br/>"
-        "<b>Reference ranges:</b> Spindle density Wamsley 2012 (age 4-6: "
-        "3-5/min). PDR ranges Hagne 1972, Niedermeyer 2005. CSWS "
-        "threshold Tassinari 1971.<br/><br/>"
+        "<b>Reference ranges:</b> Spindle density McClain 2016 (age 5: "
+        "~1/min at central derivations) and Kwon 2023 (developmental "
+        "trajectory ages 0-18). PDR ranges Hagne 1972, Niedermeyer 2005. "
+        "CSWS threshold Tassinari 1971.<br/><br/>"
         "<b>Quality grade:</b> A ≥ 80% usable + ≥15 good channels; "
         "B ≥ 65% + ≥12; C ≥ 50% + ≥8; otherwise D."
     )

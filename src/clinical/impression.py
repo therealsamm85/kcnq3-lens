@@ -96,8 +96,8 @@ def build_impression(findings: dict[str, Any],
         sentences.append(
             f"Sleep spindle density at {sp.get('channel', 'Cz')} is markedly "
             f"reduced ({sp.get('density_per_minute', 0):.2f}/min vs age-typical "
-            f"{sp.get('age_normative_range', (3, 5))[0]}–"
-            f"{sp.get('age_normative_range', (3, 5))[1]}/min)."
+            f"{sp.get('age_normative_range', (0.8, 1.5))[0]}–"
+            f"{sp.get('age_normative_range', (0.8, 1.5))[1]}/min)."
         )
 
     # 7. Synchrony pattern

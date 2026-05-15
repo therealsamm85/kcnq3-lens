@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 
-SAMPLE_URL = "https://physionet.org/content/chbmit/1.0.0/chb01/chb01_01.edf"
+SAMPLE_URL = "https://physionet.org/files/chbmit/1.0.0/chb01/chb01_01.edf"
 SAMPLE_FILENAME = "chb01_01.edf"
 EXPECTED_SIZE_BYTES = 42_399_744   # ~40 MB
 EXPECTED_MD5 = None  # Optional integrity check; PhysioNet doesn't publish MD5
@@ -147,10 +147,16 @@ def sample_description() -> dict:
             "Hosted by PhysioNet: Goldberger A, et al. Circulation 2000."
         ),
         "notes": (
-            "Pediatric epilepsy recording with intracranial seizure events. "
-            "Use this for demos and testing — please cite PhysioNet + Shoeb "
+            "Pediatric epilepsy recording (scalp EEG, not intracranial). "
+            "KNOWN LIMITATION: this dataset uses a BIPOLAR montage "
+            "(channel names like 'FP1-F7', 'F7-T7'). KCNQ3-Lens currently "
+            "auto-detects standard monopolar 10-20 channels — bipolar "
+            "channels will not be recognised as EEG. Use this sample to "
+            "exercise the EDF reader and file pipeline; full analyses "
+            "require a monopolar recording. Please cite PhysioNet + Shoeb "
             "if you publish results based on these data."
         ),
+        "montage": "bipolar (LIMITATION — see notes)",
     }
 
 

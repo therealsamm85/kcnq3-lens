@@ -1,9 +1,9 @@
 """Reference citations for every normative value and clinical criterion.
 
 Pediatric neurologists evaluating an EEG report want to know where a
-threshold came from. "Spindle density 3-5/min for age 5" is uncited;
-"Spindle density 3-5/min, Wamsley et al. 2012 (PMID 22431760)" is
-auditable.
+threshold came from. "Spindle density ~1/min at age 5" is uncited;
+"Spindle density ~1/min at age 5, McClain et al. 2016 (PMID 27110405)"
+is auditable.
 
 Each entry: short label, full citation, PubMed ID (when applicable),
 URL, and a one-line note on what the citation supports.
@@ -37,17 +37,36 @@ CITATIONS: dict[str, Citation] = {
         url=None,
         note="CSWS / ESES criterion: SWI ≥ 85% during slow-wave sleep.",
     ),
-    "wamsley_spindles": Citation(
-        key="wamsley_spindles",
-        short="Wamsley et al. 2012",
+    "mcclain_spindles": Citation(
+        key="mcclain_spindles",
+        short="McClain et al. 2016",
         full=(
-            "Wamsley EJ, Tucker MA, Shinn AK, et al. Reduced sleep spindles "
-            "and spindle coherence in schizophrenia: mechanisms of impaired "
-            "memory consolidation? Biol Psychiatry 2012;71:154-61."
+            "McClain IJ, Lustenberger C, Achermann P, Lassonde JM, Kurth S, "
+            "LeBourgeois MK. Developmental Changes in Sleep Spindle "
+            "Characteristics and Sigma Power across Early Childhood. "
+            "Neural Plasticity 2016;2016:3670951."
         ),
-        pubmed_id="22431760",
-        url="https://pubmed.ncbi.nlm.nih.gov/22431760/",
-        note="Sleep spindle density thresholds and N2-stage normative ranges.",
+        pubmed_id="27110405",
+        url="https://pubmed.ncbi.nlm.nih.gov/27110405/",
+        note=(
+            "Pediatric sleep-spindle density at central derivations "
+            "(~1/min at age 5 in NREM2)."
+        ),
+    ),
+    "kwon_spindles": Citation(
+        key="kwon_spindles",
+        short="Kwon et al. 2023",
+        full=(
+            "Kwon H, Walsh KG, Berja ED, et al. Sleep spindles in the "
+            "healthy brain from birth through 18 years. Sleep "
+            "2023;46(4):zsad017."
+        ),
+        pubmed_id="36719044",
+        url="https://pubmed.ncbi.nlm.nih.gov/36719044/",
+        note=(
+            "Large-cohort developmental spindle norms (n=567, ages 0-18). "
+            "Near-linear rate increase from ~3y to ~14y, plateau after."
+        ),
     ),
     "lacourse_yasa": Citation(
         key="lacourse_yasa",
@@ -105,8 +124,8 @@ CITATIONS: dict[str, Citation] = {
             "is it ever justifiable to treat the EEG? Lancet Neurol "
             "2003;2:725-30."
         ),
-        pubmed_id="14636778",
-        url="https://pubmed.ncbi.nlm.nih.gov/14636778/",
+        pubmed_id="14636777",
+        url="https://pubmed.ncbi.nlm.nih.gov/14636777/",
         note="Transient cognitive impairment from interictal discharges.",
     ),
     "mne_python": Citation(

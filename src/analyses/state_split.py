@@ -10,6 +10,13 @@ clinical implications differ entirely:
 
 A factor of ~1 means no sleep activation. Factor ≥ 3 is significant sleep
 activation. Factor ≥ 10 is dramatic sleep activation (typical of CSWS).
+
+NOTE on activation_label cuts (none<1.5, mild<3, moderate<10, strong≥10):
+these specific bin edges are this tool's reporting convention, NOT a
+published clinical threshold. The CSWS criterion proper is N3 SWI ≥ 85%
+(Tassinari 1971). The activation factor is descriptive context, not
+diagnostic — treat the labels as a readability aid, not as a
+literature-derived classification.
 """
 
 from __future__ import annotations
