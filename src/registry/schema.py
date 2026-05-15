@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 # ─── Controlled vocabularies ────────────────────────────────────────────────
@@ -144,6 +144,27 @@ def _is_finite(v: object) -> bool:
 
 # Per-stage SWI / sleep_stages dict — keys are constrained.
 SLEEP_STAGE_KEYS = frozenset({"WAKE", "N1", "N2", "N3", "REM"})
+
+
+# ─── Schema v2 additions ────────────────────────────────────────────────────
+# New in v2: coupling / slow-wave / HFO bucket constants for de-identified
+# aggregation. All fields that use these buckets are OPTIONAL in v2 —
+# existing v1-style submissions (without them) remain valid.
+
+PLV_BUCKETS: tuple[str, ...] = ("<0.1", "0.1-0.2", "0.2-0.35", "0.35-0.5", ">0.5")
+
+PHASE_OCTANTS: tuple[str, ...] = (
+    "[-180,-135)", "[-135,-90)", "[-90,-45)", "[-45,0)",
+    "[0,45)", "[45,90)", "[90,135)", "[135,180]",
+)
+
+COUPLED_EVENTS_BUCKETS: tuple[str, ...] = ("<10", "10-50", "50-200", ">200")
+
+SW_DENSITY_BUCKETS: tuple[str, ...] = ("<5", "5-15", "15-30", "30-50", ">50")
+
+SW_PTP_BUCKETS: tuple[str, ...] = ("<75", "75-150", "150-250", ">250")
+
+HFO_RATE_BUCKETS: tuple[str, ...] = ("0", "<1", "1-5", "5-15", ">15")
 
 
 @dataclass(frozen=True)

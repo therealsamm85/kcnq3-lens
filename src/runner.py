@@ -38,6 +38,7 @@ from .analyses.synchrony import summarize_synchrony
 from .analyses.sleep_architecture import summarize_sleep_architecture
 from .analyses.slow_waves import summarize_slow_waves
 from .analyses.hfo_ripples import compute_hfo_ripples, summarize_hfo_ripples
+from .analyses.coupling import compute_so_spindle_coupling, summarize_so_spindle_coupling
 from .clinical.impression import build_impression, build_recommendations
 from .clinical.negative_findings import build_negative_findings
 from .utils.sanitize import safe_round_dict
@@ -106,6 +107,9 @@ def run_all_analyses(
             age_years=age_years,
         )
         findings["spindles"] = summarize_spindles(spindle)
+        # Export spindle events for SO-spindle coupling (step 11d).
+        # Analogous to _slow_waves_events and _morphology_events.
+        findings["_spindle_events"] = spindle.events
     except Exception as e:
         errors["spindles"] = str(e)
     _emit("spindles", 0.50)
@@ -235,6 +239,19 @@ def run_all_analyses(
         findings["_hfo_ripples_events"] = hfo.events
     except Exception as e:
         findings["hfo_ripples"] = {"available": False, "error": str(e)}
+
+    # --- 11d. SO-spindle coupling / PLV (v0.13.2) — requires slow_waves + spindles ---
+    try:
+        coupling = compute_so_spindle_coupling(
+            rec,
+            sleep_stages=sleep_stage_result,
+            spindle_events=findings.get("_spindle_events"),
+            slow_wave_events=findings.get("_slow_waves_events"),
+            channel="Fz",
+        )
+        findings["coupling"] = summarize_so_spindle_coupling(coupling)
+    except Exception as e:
+        findings["coupling"] = {"available": False, "error": str(e)}
 
     # --- 12. Clinical impression + recommendations (v0.6) ---
     # Built from all preceding findings; deterministic, no LLM.

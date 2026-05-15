@@ -232,8 +232,122 @@ def _extract_quality_grade(f: dict) -> str | None:
     return v if v in _schema.QUALITY_GRADES else None
 
 
+# ─── Schema v2 extractors ─────────────────────────────────────────────────────
+
+
+def _extract_coupling_plv_bucket(f: dict) -> str | None:
+    c = f.get("coupling") if isinstance(f, dict) else None
+    if not isinstance(c, dict):
+        return None
+    plv = c.get("plv")
+    if plv is None or not _schema._is_nonneg_finite(plv):
+        return None
+    return _buckets.bucket_plv(float(plv))
+
+
+def _extract_coupling_phase_octant(f: dict) -> str | None:
+    c = f.get("coupling") if isinstance(f, dict) else None
+    if not isinstance(c, dict):
+        return None
+    deg = c.get("preferred_phase_deg")
+    if deg is None or not _schema._is_finite(deg):
+        return None
+    return _buckets.bucket_phase_deg(float(deg))
+
+
+def _extract_coupling_n_bucket(f: dict) -> str | None:
+    c = f.get("coupling") if isinstance(f, dict) else None
+    if not isinstance(c, dict):
+        return None
+    n = c.get("n_spindles_in_so")
+    if not isinstance(n, int) or n < 0:
+        return None
+    return _buckets.bucket_coupled_events(n)
+
+
+def _extract_coupling_rayleigh_sig(f: dict) -> bool | None:
+    c = f.get("coupling") if isinstance(f, dict) else None
+    if not isinstance(c, dict):
+        return None
+    p = c.get("rayleigh_p")
+    if p is None or not _schema._is_nonneg_finite(p):
+        return None
+    return bool(float(p) < 0.05)
+
+
+def _extract_sw_density_bucket(f: dict) -> str | None:
+    sw = f.get("slow_waves") if isinstance(f, dict) else None
+    if not isinstance(sw, dict):
+        return None
+    d = sw.get("density_per_minute")
+    if d is None or not _schema._is_nonneg_finite(d):
+        return None
+    return _buckets.bucket_sw_density(float(d))
+
+
+def _extract_sw_ptp_bucket(f: dict) -> str | None:
+    sw = f.get("slow_waves") if isinstance(f, dict) else None
+    if not isinstance(sw, dict):
+        return None
+    ptp = sw.get("mean_ptp_uv")
+    if ptp is None or not _schema._is_nonneg_finite(ptp):
+        return None
+    return _buckets.bucket_sw_ptp_uv(float(ptp))
+
+
+def _extract_sw_method(f: dict) -> str | None:
+    sw = f.get("slow_waves") if isinstance(f, dict) else None
+    if not isinstance(sw, dict):
+        return None
+    v = sw.get("method")
+    # Allow only known method strings
+    if v in ("yasa", "heuristic"):
+        return v
+    return None
+
+
+def _extract_hfo_rate_bucket(f: dict) -> str | None:
+    hfo = f.get("hfo_ripples") if isinstance(f, dict) else None
+    if not isinstance(hfo, dict):
+        return None
+    rate = hfo.get("rate_per_minute_nrem")
+    if rate is None or not _schema._is_nonneg_finite(rate):
+        return None
+    return _buckets.bucket_hfo_rate(float(rate))
+
+
+def _extract_hfo_available(f: dict) -> bool | None:
+    hfo = f.get("hfo_ripples") if isinstance(f, dict) else None
+    if not isinstance(hfo, dict):
+        return None
+    v = hfo.get("available")
+    return bool(v) if isinstance(v, bool) else None
+
+
+def _extract_hfo_pct_on_spike_bucket(f: dict) -> str | None:
+    hfo = f.get("hfo_ripples") if isinstance(f, dict) else None
+    if not isinstance(hfo, dict):
+        return None
+    total = hfo.get("n_ripples_total")
+    on_spike = hfo.get("n_ripples_on_spike")
+    if (
+        not isinstance(total, int) or not isinstance(on_spike, int)
+        or total <= 0
+    ):
+        return None
+    pct = 100.0 * on_spike / total
+    # Bucket: "<10", "10-50", "50-90", ">90"
+    if pct < 10:
+        return "<10"
+    if pct < 50:
+        return "10-50"
+    if pct < 90:
+        return "50-90"
+    return ">90"
+
+
 # Order matters only for diff readability; semantics are independent.
-_EXTRACTORS: dict[str, Callable[[dict], Any]] = {
+_EXTRACTORS_V1: dict[str, Callable[[dict], Any]] = {
     "background_pdr_hz": _extract_pdr_hz,
     "swi_pct_by_stage": _extract_swi_by_stage,
     "csws_criterion_met": _extract_csws_met,
@@ -250,6 +364,28 @@ _EXTRACTORS: dict[str, Callable[[dict], Any]] = {
     "quality_grade": _extract_quality_grade,
 }
 
+_EXTRACTORS_V2_ADDITIONAL: dict[str, Callable[[dict], Any]] = {
+    # coupling
+    "coupling_plv_bucket": _extract_coupling_plv_bucket,
+    "coupling_preferred_phase_octant": _extract_coupling_phase_octant,
+    "coupling_n_events_bucket": _extract_coupling_n_bucket,
+    "coupling_rayleigh_significant": _extract_coupling_rayleigh_sig,
+    # slow waves
+    "sw_density_bucket": _extract_sw_density_bucket,
+    "sw_mean_ptp_bucket": _extract_sw_ptp_bucket,
+    "sw_method": _extract_sw_method,
+    # HFO
+    "hfo_rate_bucket": _extract_hfo_rate_bucket,
+    "hfo_available": _extract_hfo_available,
+    "hfo_pct_on_spike_bucket": _extract_hfo_pct_on_spike_bucket,
+}
+
+# Default extractors (v2)
+_EXTRACTORS: dict[str, Callable[[dict], Any]] = {
+    **_EXTRACTORS_V1,
+    **_EXTRACTORS_V2_ADDITIONAL,
+}
+
 
 # ─── Builder ───────────────────────────────────────────────────────────────
 
@@ -261,6 +397,7 @@ def build_submission(
     tool_version: str,
     submission_id: str | None = None,
     now: datetime | None = None,
+    schema_version_target: int = 2,
 ) -> dict:
     """Build a registry-shaped submission JSON.
 
@@ -291,8 +428,18 @@ def build_submission(
 
     submission_month = now.strftime("%Y-%m")
 
+    # Select extractors based on target schema version.
+    # v1: only the v1 fields (for backward-compat testing / legacy mode).
+    # v2: v1 + additional v2 fields (additive, all optional).
+    if schema_version_target == 1:
+        active_extractors = _EXTRACTORS_V1
+        schema_ver_out = 1
+    else:
+        active_extractors = _EXTRACTORS
+        schema_ver_out = _schema.SCHEMA_VERSION
+
     findings_out: dict[str, Any] = {}
-    for field_name, extractor in _EXTRACTORS.items():
+    for field_name, extractor in active_extractors.items():
         try:
             value = extractor(findings)
         except Exception:
@@ -311,7 +458,7 @@ def build_submission(
 
     submission = {
         "submission_id": sid,
-        "schema_version": _schema.SCHEMA_VERSION,
+        "schema_version": schema_ver_out,
         "submitted_at_month": submission_month,
         "consent": {
             "version": consent.version,

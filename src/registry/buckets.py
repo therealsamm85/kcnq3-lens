@@ -76,6 +76,153 @@ def assert_valid_bucket(value: str, allowed: tuple[str, ...]) -> str:
     return value
 
 
+# ─── Schema v2 bucket helpers ─────────────────────────────────────────────────
+
+
+def bucket_plv(plv: float | None) -> str | None:
+    """Map a PLV (0..1) to one of schema.PLV_BUCKETS. None → None."""
+    if plv is None:
+        return None
+    try:
+        v = float(plv)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v < 0:  # NaN or negative
+        return None
+    # Lower-inclusive, upper-exclusive; last bucket open-ended
+    if v < 0.1:
+        return "<0.1"
+    if v < 0.2:
+        return "0.1-0.2"
+    if v < 0.35:
+        return "0.2-0.35"
+    if v < 0.5:
+        return "0.35-0.5"
+    return ">0.5"
+
+
+def bucket_phase_deg(deg: float | None) -> str | None:
+    """Map a preferred phase in degrees (-180..180) to one of schema.PHASE_OCTANTS.
+
+    Convention: lower-inclusive, upper-exclusive, except the last octant
+    [135,180] which is upper-inclusive (closed on both ends to capture 180°).
+    Each octant covers exactly 45°:
+      [-180,-135), [-135,-90), [-90,-45), [-45,0),
+      [0,45), [45,90), [90,135), [135,180]
+    """
+    if deg is None:
+        return None
+    try:
+        v = float(deg)
+    except (TypeError, ValueError):
+        return None
+    if v != v:  # NaN
+        return None
+    # Clamp to [-180, 180] to handle floating-point edge cases
+    v = max(-180.0, min(180.0, v))
+    octants = [
+        (-180.0, -135.0, "[-180,-135)"),
+        (-135.0, -90.0,  "[-135,-90)"),
+        (-90.0,  -45.0,  "[-90,-45)"),
+        (-45.0,    0.0,  "[-45,0)"),
+        (  0.0,   45.0,  "[0,45)"),
+        ( 45.0,   90.0,  "[45,90)"),
+        ( 90.0,  135.0,  "[90,135)"),
+        (135.0,  180.0,  "[135,180]"),
+    ]
+    for lo, hi, label in octants[:-1]:
+        if lo <= v < hi:
+            return label
+    # Last octant is closed: [135, 180]
+    return "[135,180]"
+
+
+def bucket_coupled_events(n: int | None) -> str | None:
+    """Map a count of coupled events to one of schema.COUPLED_EVENTS_BUCKETS.
+
+    Convention: lower-inclusive, upper-exclusive (50-200 includes 50, excludes 200).
+    """
+    if n is None:
+        return None
+    try:
+        v = int(n)
+    except (TypeError, ValueError):
+        return None
+    if v < 0:
+        return None
+    if v < 10:
+        return "<10"
+    if v < 50:
+        return "10-50"
+    if v < 200:
+        return "50-200"
+    return ">200"
+
+
+def bucket_sw_density(density: float | None) -> str | None:
+    """Map slow-wave density (per minute) to one of schema.SW_DENSITY_BUCKETS."""
+    if density is None:
+        return None
+    try:
+        v = float(density)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v < 0:
+        return None
+    if v < 5:
+        return "<5"
+    if v < 15:
+        return "5-15"
+    if v < 30:
+        return "15-30"
+    if v < 50:
+        return "30-50"
+    return ">50"
+
+
+def bucket_sw_ptp_uv(ptp: float | None) -> str | None:
+    """Map slow-wave peak-to-peak amplitude (µV) to one of schema.SW_PTP_BUCKETS."""
+    if ptp is None:
+        return None
+    try:
+        v = float(ptp)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v < 0:
+        return None
+    if v < 75:
+        return "<75"
+    if v < 150:
+        return "75-150"
+    if v < 250:
+        return "150-250"
+    return ">250"
+
+
+def bucket_hfo_rate(rate: float | None) -> str | None:
+    """Map HFO rate (per minute) to one of schema.HFO_RATE_BUCKETS.
+
+    The "0" bucket is exact zero (no ripples detected).
+    """
+    if rate is None:
+        return None
+    try:
+        v = float(rate)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v < 0:
+        return None
+    if v == 0.0:
+        return "0"
+    if v < 1.0:
+        return "<1"
+    if v < 5.0:
+        return "1-5"
+    if v < 15.0:
+        return "5-15"
+    return ">15"
+
+
 # Re-exports for convenience.
 AGE_BUCKETS = _schema.AGE_BUCKETS
 DURATION_BUCKETS = _schema.DURATION_BUCKETS

@@ -20,6 +20,8 @@ from .phi_check import scan_for_phi, is_clean
 from .buckets import (
     bucket_age_years, bucket_duration_hours,
     AGE_BUCKETS, DURATION_BUCKETS,
+    bucket_plv, bucket_phase_deg, bucket_coupled_events,
+    bucket_sw_density, bucket_sw_ptp_uv, bucket_hfo_rate,
 )
 from .upload import (
     build_issue_url, submission_summary_md, to_jsonl_line,
@@ -34,6 +36,8 @@ __all__ = [
     "scan_for_phi", "is_clean",
     "bucket_age_years", "bucket_duration_hours",
     "AGE_BUCKETS", "DURATION_BUCKETS",
+    "bucket_plv", "bucket_phase_deg", "bucket_coupled_events",
+    "bucket_sw_density", "bucket_sw_ptp_uv", "bucket_hfo_rate",
     "build_issue_url", "submission_summary_md", "to_jsonl_line",
     "DEFAULT_OWNER", "DEFAULT_REPO",
 ]

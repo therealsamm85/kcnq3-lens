@@ -234,6 +234,38 @@ CITATIONS: dict[str, Citation] = {
             "demonstrates feasibility of scalp-level ripple detection in pediatric EEG."
         ),
     ),
+    "helfrich_coupling": Citation(
+        key="helfrich_coupling",
+        short="Helfrich et al. 2018",
+        full=(
+            "Helfrich RF, Mander BA, Jagust WJ, Knight RT, Walker MP. "
+            "Old Brains Come Uncoupled in Sleep: Slow Wave-Spindle Synchrony, "
+            "Brain Atrophy, and Forgetting. Neuron 2018;97(1):221-230.e4."
+        ),
+        pubmed_id="29395264",
+        url="https://pubmed.ncbi.nlm.nih.gov/29395264/",
+        note=(
+            "SO-spindle coupling and memory consolidation in aging; "
+            "validates PLV as coupling metric in adults."
+        ),
+    ),
+    "hahn_coupling_pediatric": Citation(
+        key="hahn_coupling_pediatric",
+        short="Hahn et al. 2020",
+        full=(
+            "Hahn M, Joechner AK, Roell J, Volbert SH, Gruber G, Holz J, "
+            "Schabus M, Wilhelm I, Born J, Werkle-Bergner M. "
+            "Slow oscillation-spindle coupling predicts enhanced memory formation "
+            "from childhood to adolescence. Elife 2020;9:e53730."
+        ),
+        pubmed_id="32499637",
+        url="https://pubmed.ncbi.nlm.nih.gov/32499637/",
+        note=(
+            "Paediatric SO-spindle coupling, ages 8–19. PLV rises from ~0.15 "
+            "(age 8) toward adult levels during adolescence. "
+            "No validated cutoffs below age 8."
+        ),
+    ),
 }
 
 
@@ -263,4 +295,5 @@ def methods_attribution() -> dict[str, str]:
         "morphology": "binnie_tci",   # for cognitive-relevance framing
         "slow_waves": "massimini_sw",
         "hfo_ripples": "staba_hfo",
+        "coupling": "helfrich_coupling",
     }

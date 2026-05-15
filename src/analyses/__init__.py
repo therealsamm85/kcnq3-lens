@@ -17,6 +17,9 @@ from .sleep_architecture import (
 )
 from .slow_waves import compute_slow_waves, SlowWaveResult
 from .hfo_ripples import compute_hfo_ripples, summarize_hfo_ripples, HFORippleResult
+from .coupling import (
+    compute_so_spindle_coupling, summarize_so_spindle_coupling, CouplingResult,
+)
 
 __all__ = [
     "compute_topography", "TopographyResult",
@@ -34,4 +37,5 @@ __all__ = [
     "compute_sleep_architecture", "SleepArchitectureResult",
     "compute_slow_waves", "SlowWaveResult",
     "compute_hfo_ripples", "summarize_hfo_ripples", "HFORippleResult",
+    "compute_so_spindle_coupling", "summarize_so_spindle_coupling", "CouplingResult",
 ]

@@ -44,7 +44,7 @@ artifact). See tests/compare_yasa.py and tests/yasa_sensitivity.py.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.signal import butter, sosfiltfilt, hilbert
@@ -63,6 +63,8 @@ class SpindleResult:
     age_normative_range: tuple[float, float] | None
     interpretation: str        # "below", "in", "above", "no_age_provided"
     method: str                # "yasa" or "heuristic"
+    events: list[dict] = field(default_factory=list)
+    # [{peak_time_s: float, start_s: float, end_s: float, duration_s: float}]
 
 
 # Anchors from McClain 2016 (PMID 27110405) at ages 2-5 (≈1/min at C3/C4 NREM2)
@@ -116,10 +118,11 @@ def _yasa_available() -> bool:
 
 def _detect_with_yasa(
     signal_uv: np.ndarray, sfreq: float
-) -> tuple[int, float, float]:
+) -> tuple[int, float, float, list[dict]]:
     """Run YASA spindles_detect.
 
-    Returns (n_spindles, mean_duration_s, median_peak_hz).
+    Returns (n_spindles, mean_duration_s, median_peak_hz, events).
+    events: list of {peak_time_s, start_s, end_s, duration_s}
     """
     import yasa
 
@@ -136,14 +139,37 @@ def _detect_with_yasa(
         verbose=False,
     )
     if result is None:
-        return 0, 0.0, 0.0
+        return 0, 0.0, 0.0, []
     df = result.summary()
     if len(df) == 0:
-        return 0, 0.0, 0.0
+        return 0, 0.0, 0.0, []
+
+    # Build events list with peak_time_s.
+    # YASA summary has "Start", "End", "Peak" columns (in seconds).
+    events: list[dict] = []
+    for _, row in df.iterrows():
+        start_s = float(row["Start"])
+        end_s = float(row["End"])
+        # YASA "Peak" column is the peak sample time in seconds
+        if "Peak" in df.columns:
+            peak_s = float(row["Peak"])
+        else:
+            # Fallback: midpoint of start/end
+            peak_s = (start_s + end_s) / 2.0
+        dur_s = float(row["Duration"])
+        if all(np.isfinite(v) for v in [start_s, end_s, peak_s, dur_s]):
+            events.append({
+                "start_s": start_s,
+                "end_s": end_s,
+                "peak_time_s": peak_s,
+                "duration_s": dur_s,
+            })
+
     return (
         int(len(df)),
         float(df["Duration"].mean()),
         float(df["Frequency"].median()),
+        events,
     )
 
 
@@ -152,7 +178,12 @@ def _detect_with_yasa(
 
 def _detect_with_heuristic(
     signal: np.ndarray, sfreq: float
-) -> tuple[int, float, float]:
+) -> tuple[int, float, float, list[dict]]:
+    """Envelope-percentile spindle detector.
+
+    Returns (n_spindles, mean_duration_s, median_peak_hz, events).
+    events: list of {peak_time_s, start_s, end_s, duration_s}
+    """
     sos = butter(4, [11.0, 16.0], btype="band", fs=sfreq, output="sos")
     filtered = sosfiltfilt(sos, signal)
     envelope = np.abs(hilbert(filtered))
@@ -164,7 +195,7 @@ def _detect_with_heuristic(
     min_samples = int(0.5 * sfreq)
     max_samples = int(2.5 * sfreq)
 
-    spindles = []
+    spindle_ranges = []
     i = 0
     while i < len(above):
         if above[i]:
@@ -172,14 +203,14 @@ def _detect_with_heuristic(
             while j < len(above) and above[j]:
                 j += 1
             if min_samples <= (j - i) <= max_samples:
-                spindles.append((i, j))
+                spindle_ranges.append((i, j))
             i = j
         else:
             i += 1
 
-    durations_s = [(j - i) / sfreq for i, j in spindles]
+    durations_s = [(j - i) / sfreq for i, j in spindle_ranges]
     peak_freqs = []
-    for i, j in spindles[:200]:
+    for i, j in spindle_ranges[:200]:
         seg = filtered[i:j]
         if len(seg) < 8:
             continue
@@ -189,10 +220,24 @@ def _detect_with_heuristic(
         if band.any():
             peak_freqs.append(freqs[band][np.argmax(fft[band])])
 
+    # Build events list: peak_time_s from envelope maximum within spindle
+    events: list[dict] = []
+    for i, j in spindle_ranges:
+        seg_env = smooth[i:j]
+        peak_offset = int(np.argmax(seg_env))
+        peak_sample = i + peak_offset
+        events.append({
+            "start_s": float(i / sfreq),
+            "end_s": float(j / sfreq),
+            "peak_time_s": float(peak_sample / sfreq),
+            "duration_s": float((j - i) / sfreq),
+        })
+
     return (
-        len(spindles),
+        len(spindle_ranges),
         float(np.mean(durations_s)) if durations_s else 0.0,
         float(np.median(peak_freqs)) if peak_freqs else 0.0,
+        events,
     )
 
 
@@ -264,9 +309,13 @@ def compute_spindle_density(
     if method == "yasa":
         centered = x - x.mean()
         signal_for_yasa = centered * (target_amplitude_uv / max(centered.std(), 1e-9))
-        n_spindles, mean_dur, peak_hz = _detect_with_yasa(signal_for_yasa, rec.sfreq)
+        n_spindles, mean_dur, peak_hz, events = _detect_with_yasa(
+            signal_for_yasa, rec.sfreq
+        )
     else:
-        n_spindles, mean_dur, peak_hz = _detect_with_heuristic(x, rec.sfreq)
+        n_spindles, mean_dur, peak_hz, events = _detect_with_heuristic(
+            x, rec.sfreq
+        )
 
     total_hours = len(x) / rec.sfreq / 3600
     total_min = len(x) / rec.sfreq / 60
@@ -283,6 +332,7 @@ def compute_spindle_density(
         age_normative_range=norm,
         interpretation=_interp(density, norm),
         method=method,
+        events=events,
     )
 
 
