@@ -138,6 +138,10 @@ def run_all_analyses(
             rec, start_epoch=sleep_start_epoch, end_epoch=sleep_end_epoch
         )
         findings["morphology"] = summarize_morphology(morph)
+        # C4 (v0.13.1): export spike event times for HFO co-occurrence coupling.
+        # morph.events is a list of {"time_s": float} dicts built from detected
+        # peak sample indices.  Analogous to _slow_waves_events convention.
+        findings["_morphology_events"] = morph.events
     except Exception as e:
         errors["morphology"] = str(e)
     _emit("morphology", 0.95)
@@ -219,13 +223,11 @@ def run_all_analyses(
 
     # --- 11c. HFO ripples (v0.13.1) — Tier 2 ---
     try:
-        _age = getattr(rec, 'age_years', None) or age_years
         hfo = compute_hfo_ripples(
             rec,
             sleep_stages=sleep_stage_result,
             channel="Cz",
             line_freq_hz=50.0,
-            age_years=_age,
             morphology_events=findings.get("_morphology_events"),
         )
         findings["hfo_ripples"] = summarize_hfo_ripples(hfo)

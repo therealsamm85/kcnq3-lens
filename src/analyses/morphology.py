@@ -29,7 +29,7 @@ surfaced the original bug.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.signal import butter, sosfiltfilt, find_peaks
@@ -50,6 +50,9 @@ class MorphologyResult:
     duration_percentiles_ms: tuple[float, float, float]  # p25, p50, p75
     rate_ci_low_per_min: float | None = None   # 95% CI lower bound for events/min
     rate_ci_high_per_min: float | None = None  # 95% CI upper bound for events/min
+    # C4: spike event times for HFO co-occurrence coupling (v0.13.1)
+    # Each dict has {"time_s": float} — analogous to _slow_waves_events convention.
+    events: list[dict] = field(default_factory=list)
 
 
 def compute_spike_morphology(
@@ -195,6 +198,14 @@ def compute_spike_morphology(
         except Exception:
             pass
 
+    # Build event list for HFO co-occurrence coupling (C4, v0.13.1).
+    # Each entry exposes time_s so hfo_ripples.py can look up spike times
+    # without needing to re-run detection.
+    morph_events = [
+        {"time_s": float(p) / rec.sfreq}
+        for p in peaks
+    ]
+
     return MorphologyResult(
         channel=target_channel,
         n_events_detected=len(peaks),
@@ -207,6 +218,7 @@ def compute_spike_morphology(
         duration_percentiles_ms=(float(p25), float(p50), float(p75)),
         rate_ci_low_per_min=rate_ci_low,
         rate_ci_high_per_min=rate_ci_high,
+        events=morph_events,
     )
 
 

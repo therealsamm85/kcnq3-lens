@@ -51,7 +51,7 @@ _DISCLAIMER = (
 class HFORippleResult:
     channel: str
     sfreq_used: float
-    available: bool                     # False when sfreq < 500 Hz
+    available: bool                     # False when sfreq < 600 Hz or rec < 30 s
     unavailable_reason: str             # "insufficient_sfreq" | ""
     n_ripples_total: int
     n_ripples_isolated: int             # without spike co-occurrence
@@ -68,7 +68,15 @@ class HFORippleResult:
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-def _unavailable(reason: str, notes: list[str], sfreq: float) -> HFORippleResult:
+def _unavailable(
+    reason: str,
+    notes: list[str],
+    sfreq: float,
+    reason_detail: str = "",
+) -> HFORippleResult:
+    all_notes = list(notes)
+    if reason_detail:
+        all_notes.append(f"reason_detail:{reason_detail}")
     return HFORippleResult(
         channel="",
         sfreq_used=sfreq,
@@ -83,7 +91,7 @@ def _unavailable(reason: str, notes: list[str], sfreq: float) -> HFORippleResult
         method="energy_staba_style",
         artifact_warnings=[],
         events=[],
-        notes=notes,
+        notes=all_notes,
     )
 
 
@@ -154,7 +162,6 @@ def compute_hfo_ripples(
     sleep_stages: SleepStageResult | None = None,
     channel: str = "Cz",
     line_freq_hz: float = 50.0,
-    age_years: float | None = None,  # noqa: ARG001 — reserved, not used yet
     morphology_events: list[dict] | None = None,
 ) -> HFORippleResult:
     """Detect HFO ripples (80–250 Hz) using a Staba-style energy threshold.
@@ -170,38 +177,46 @@ def compute_hfo_ripples(
     line_freq_hz : float
         Mains frequency for notch filter (default 50.0 Hz; use 60.0 for North
         America). Both fundamental and second harmonic are notched.
-    age_years : float, optional
-        Child's age (reserved for future age-specific thresholds; not used in
-        this release).
     morphology_events : list[dict], optional
         Spike events from morphology analysis. Each must have a ``time_s`` key
-        (or ``neg_peak_s`` as fallback). Ripples within 100 ms of a spike are
-        flagged as co-occurring but NOT dropped.
+        (or ``neg_peak_s`` / ``peak_s`` as fallback). Ripples within 100 ms of
+        a spike are flagged as co-occurring but NOT dropped.
 
     Returns
     -------
     HFORippleResult
-        ``available=False`` when sfreq < 500 Hz — clean graceful skip.
+        ``available=False`` when sfreq < 600 Hz or recording < 30 s.
 
     Raises
     ------
     ValueError
-        If recording < 30 seconds, or no EEG channel found after fallback.
+        If no EEG channel found after fallback.
     """
     notes: list[str] = []
 
     # ── Step 1: sfreq guard ───────────────────────────────────────────────────
-    if rec.sfreq < 500:
+    # Minimum 600 Hz required: at 500 Hz the Nyquist (250 Hz) equals the
+    # ripple band upper edge, producing a degenerate FIR (cutoff clamped to
+    # 0.999). 600 Hz gives a clean 250 Hz bandpass with 50 Hz headroom.
+    if rec.sfreq < 600:
         notes.append(
-            f"sfreq={rec.sfreq:.0f}_Hz_below_500_Hz_minimum_for_ripple_detection"
+            f"sfreq={rec.sfreq:.0f}_Hz_below_600_Hz_minimum_for_ripple_detection"
         )
-        return _unavailable("insufficient_sfreq", notes, rec.sfreq)
+        return _unavailable(
+            "insufficient_sfreq",
+            notes,
+            rec.sfreq,
+            reason_detail=f"need sfreq>=600, got {rec.sfreq:.0f}",
+        )
 
     # ── Recording duration guard ──────────────────────────────────────────────
     if rec.duration_s < 30:
-        raise ValueError(
-            f"Recording is only {rec.duration_s:.1f}s; HFO ripple detection "
-            "requires at least 30 seconds of data."
+        notes.append(f"recording_too_short_{rec.duration_s:.1f}s")
+        return _unavailable(
+            "recording_too_short",
+            notes,
+            rec.sfreq,
+            reason_detail=f"need >=30s, got {rec.duration_s:.1f}s",
         )
 
     # ── Step 2: Channel fallback chain (case-insensitive) ─────────────────────
@@ -262,28 +277,45 @@ def compute_hfo_ripples(
     filtered = _bandpass_fir(signal, sfreq, 80.0, 250.0)
 
     # Also bandpass for Burnos specificity check: 250–min(500, nyq-1) Hz
+    # Full check requires sfreq ≥ 1000 Hz (nyq ≥ 500) for the complete
+    # 250–500 Hz comparison band per Burnos et al. 2014.
     nyq = sfreq / 2.0
     high_band_hi = min(500.0, nyq - 1.0)
     do_burnos = high_band_hi > 250.0
+    # C2: flag explicitly when check is degraded or disabled due to low sfreq.
+    artifact_warnings_pre: list[str] = []
+    if sfreq < 1000.0:
+        # Either Burnos is fully disabled (sfreq ≤ ~502) or runs with a
+        # compressed comparison band (502 < sfreq < 1000). Either way,
+        # frequency-specificity rejection is below the validated range.
+        notes.append("burnos_check_disabled_low_sfreq")
+        artifact_warnings_pre.append(
+            "frequency_specificity_check_unavailable_below_1khz_sfreq"
+        )
+        if not do_burnos:
+            # Nyquist too low for any comparison band — skip entirely.
+            pass  # do_burnos already False, filtered_high will not be used
     if do_burnos:
         filtered_high = _bandpass_fir(signal, sfreq, 250.0, high_band_hi)
-    else:
-        do_burnos = False
 
-    # ── Step 5: RMS envelope (3 ms window) ────────────────────────────────────
-    window_samp = max(1, int(round(0.003 * sfreq)))
+    # ── Step 5: RMS envelope (6 ms window) ────────────────────────────────────
+    # 6 ms provides better temporal smoothing and reduces spurious single-sample
+    # peaks compared to the original 3 ms window.
+    window_samp = max(1, int(round(0.006 * sfreq)))
     rms = _rms_envelope(filtered, window_samp)
 
-    # ── Step 6: Threshold (5 × SD of background RMS, bottom 90 percentile) ────
-    bg_rms = rms[rms <= np.percentile(rms, 90)]
+    # ── Step 6: Threshold (5 × SD of background RMS, bottom 50 percentile) ────
+    # Bottom 50% (median) follows Staba/Burnos convention: use only the quieter
+    # half of the signal as background to avoid threshold inflation from bursts.
+    bg_rms = rms[rms <= np.percentile(rms, 50)]
     if len(bg_rms) == 0:
         bg_rms = rms
     threshold = 5.0 * float(np.std(bg_rms))
-    # Minimum absolute floor: a detectable scalp ripple must exceed 0.5 µV
-    # in the bandpass-filtered RMS envelope. This guards against sub-µV
-    # filter-edge transients (e.g. from a notched pure-tone signal) being
-    # detected as events due to a near-zero background std.
-    threshold = max(threshold, 0.5)
+    # Minimum absolute floor: 1 µV (Kuhnke et al. 2018, PMID 30215099 reports
+    # scalp ripple amplitudes typically 1-3 µV). Floor at 1 µV prevents
+    # sub-physiological detections from filter-edge artifacts.
+    _MIN_THRESHOLD_UV = 1.0
+    threshold = max(threshold, _MIN_THRESHOLD_UV)
     if threshold <= 0 or not math.isfinite(threshold):
         # Degenerate signal — return zero events cleanly
         notes.append("degenerate_signal_zero_threshold")
@@ -429,13 +461,22 @@ def compute_hfo_ripples(
     spike_times: list[float] = []
     if morphology_events:
         for mev in morphology_events:
-            # Support both key conventions
-            t = mev.get("time_s") or mev.get("neg_peak_s") or mev.get("peak_s")
-            if t is not None:
-                try:
-                    spike_times.append(float(t))
-                except (TypeError, ValueError):
-                    pass
+            # C3 fix: use explicit key precedence to avoid falsy coercion bug
+            # where time_s == 0.0 would incorrectly fall through to next key.
+            if "time_s" in mev:
+                t = mev["time_s"]
+            elif "neg_peak_s" in mev:
+                t = mev["neg_peak_s"]
+            elif "peak_s" in mev:
+                t = mev["peak_s"]
+            else:
+                continue  # malformed event, skip
+            if t is None or not math.isfinite(float(t) if t is not None else float("nan")):
+                continue
+            try:
+                spike_times.append(float(t))
+            except (TypeError, ValueError):
+                pass
 
     for ev in raw_events:
         if any(abs(ev["peak_s"] - st) < 0.1 for st in spike_times):
@@ -445,7 +486,9 @@ def compute_hfo_ripples(
     n_isolated = len(raw_events) - n_on_spike
 
     # ── Step 12: Artifact warnings ────────────────────────────────────────────
-    artifact_warnings: list[str] = []
+    # Pre-populate with any warnings accumulated before event detection
+    # (e.g. frequency_specificity_check_unavailable from C2 above).
+    artifact_warnings: list[str] = list(artifact_warnings_pre)
     median_rms = float(np.median(rms))
     sigma_rms = float(np.std(rms))
     high_power_frac = float(np.mean(rms > (median_rms + 5.0 * sigma_rms)))
