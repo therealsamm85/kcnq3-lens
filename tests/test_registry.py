@@ -627,6 +627,116 @@ check("duration 24 → '24-48'", bucket_duration_hours(24) == "24-48")
 check("duration 999 → '48+'", bucket_duration_hours(999) == "48+")
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# v0.12.3 — upload helpers + submissions log
+# ═══════════════════════════════════════════════════════════════════════
+
+section("v0.12.3 — upload helpers")
+
+from src.registry.upload import (
+    build_issue_url, submission_summary_md, to_jsonl_line,
+    DEFAULT_OWNER, DEFAULT_REPO,
+)
+import urllib.parse as _urlparse
+
+sub_for_url = build_submission(
+    findings=_good_findings(), user_input=_good_input(),
+    consent=_good_consent(), tool_version="0.12.3",
+)
+url = build_issue_url(sub_for_url, owner="alice", repo="myreg")
+check("issue url uses correct owner/repo",
+      url.startswith("https://github.com/alice/myreg/issues/new?"))
+parsed = _urlparse.urlparse(url)
+qs = _urlparse.parse_qs(parsed.query)
+check("issue url has title", "title" in qs and qs["title"])
+check("issue url has body", "body" in qs and qs["body"])
+check("issue url has labels", "labels" in qs and qs["labels"])
+body = qs["body"][0]
+check("issue body contains submission JSON code fence",
+      "```json" in body and "submission_id" in body)
+check("issue body references consent_v1.md",
+      "consent_v1.md" in body)
+check("issue body does NOT contain free-text PHI markers",
+      not any(s in body for s in [
+          "patient", "DOB", "my daughter", "@example.com",
+      ]))
+
+# Default owner/repo are configurable via env
+import os as _os
+_os.environ["KCNQ3_REGISTRY_OWNER"] = "envowner"
+_os.environ["KCNQ3_REGISTRY_REPO"] = "envrepo"
+# Re-import module fresh to pick up env
+import importlib as _il
+from src.registry import upload as _up_mod
+_il.reload(_up_mod)
+url2 = _up_mod.build_issue_url(sub_for_url)
+check("env-var overrides apply", "/envowner/envrepo/" in url2)
+_os.environ.pop("KCNQ3_REGISTRY_OWNER", None)
+_os.environ.pop("KCNQ3_REGISTRY_REPO", None)
+_il.reload(_up_mod)
+
+# Summary contains de-id stamp, no exact age/duration
+preview = submission_summary_md(sub_for_url)
+check("summary contains 'will be sent'",
+      "everything that will be sent" in preview)
+check("summary mentions 'exact age **not** shared'",
+      "exact age **not** shared" in preview)
+check("summary lists submission_id",
+      sub_for_url["submission_id"] in preview)
+
+# JSONL line is single-line and round-trips
+line = to_jsonl_line(sub_for_url)
+check("JSONL line is single-line",
+      "\n" not in line)
+check("JSONL line round-trips through json.loads",
+      json.loads(line) == sub_for_url)
+
+
+section("v0.12.3 — submissions_log table")
+
+import tempfile as _tf3
+from src.longitudinal import db as _db_v123
+_db_v123.reset_init_cache_for_tests()
+log_dir = Path(_tf3.mkdtemp(prefix="kcnq3_log_"))
+import os as _os2
+_os2.environ["KCNQ3_LENS_DATA"] = str(log_dir)
+
+# record_submission + list_submissions_log
+rid = _db_v123.record_submission(
+    submission_id=sub_for_url["submission_id"],
+    submission=sub_for_url,
+    issue_url="https://github.com/x/y/issues/123",
+)
+check("record_submission returns positive id", rid > 0)
+hist = _db_v123.list_submissions_log()
+check("list_submissions_log returns the row", len(hist) == 1)
+check("logged submission_id matches",
+      hist[0]["submission_id"] == sub_for_url["submission_id"])
+check("logged submission JSON round-trips",
+      hist[0]["submission"]["subject"]["variant_gene"] == "KCNQ3")
+
+# find_submission_in_log by id
+found = _db_v123.find_submission_in_log(sub_for_url["submission_id"])
+check("find_submission_in_log returns the row",
+      found is not None
+      and found["submission_id"] == sub_for_url["submission_id"])
+missing = _db_v123.find_submission_in_log("not-a-real-id")
+check("find_submission_in_log returns None for unknown id",
+      missing is None)
+
+# UNIQUE constraint: re-inserting same submission_id fails
+import sqlite3 as _sqlite3
+try:
+    _db_v123.record_submission(
+        submission_id=sub_for_url["submission_id"],
+        submission=sub_for_url,
+        issue_url="duplicate-attempt",
+    )
+    check("duplicate submission_id is rejected by UNIQUE", False)
+except _sqlite3.IntegrityError:
+    check("duplicate submission_id is rejected by UNIQUE", True)
+
+
 # ─── Final ──────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")

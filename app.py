@@ -87,6 +87,7 @@ _MODE_LABELS = {
     "single": T("mode_single"),
     "compare": T("mode_compare"),
     "longitudinal": "🗓️ Longitudinal history",
+    "contribute": "🌍 Contribute to registry",
 }
 mode = st.sidebar.radio(
     label="mode",
@@ -1362,6 +1363,308 @@ elif mode == "longitudinal":
         st.write(f"**{len(diary)} diary entries**")
         st.dataframe(pd.DataFrame(diary_to_table(diary)),
                      use_container_width=True, hide_index=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODE D: Contribute to federated registry
+# ═══════════════════════════════════════════════════════════════════════════
+elif mode == "contribute":
+    from src.registry import (
+        build_submission, SubmissionInput, BuildError,
+        make_consent, CURRENT_CONSENT_VERSION,
+        build_issue_url, submission_summary_md, to_jsonl_line,
+        validate_submission, scan_for_phi,
+        DEFAULT_OWNER, DEFAULT_REPO,
+    )
+    from src.longitudinal import db as _registry_db
+    from src import __version__ as _app_version
+
+    st.header("🌍 Contribute to the federated rare-variant registry")
+    st.caption(
+        "Help turn n=1 case reports into n=many cohort data. Your "
+        "submission is **de-identified by construction** — no exact age, "
+        "no exact date, no filename, no free text. Always reviewable "
+        "before upload."
+    )
+
+    entries = load_longitudinal()
+    if not entries:
+        st.info(
+            "No saved recordings yet. Run an analysis in **Single recording** "
+            "mode, click '💾 Save to history', then return here."
+        )
+        st.stop()
+
+    # ── Recording picker ────────────────────────────────────────────────
+    pick_label = lambda e: (
+        f"{e.recording_date} — {e.label or '(no label)'} "
+        f"— {e.source_filename or 'unknown'}"
+    )
+    entry_idx = st.selectbox(
+        "Recording to contribute",
+        options=list(range(len(entries))),
+        format_func=lambda i: pick_label(entries[i]),
+        key="contrib_entry_idx",
+    )
+    chosen = entries[entry_idx]
+    findings = chosen.findings or {}
+
+    st.write(f"**Findings keys in this recording:** "
+             f"`{', '.join(sorted(findings.keys()))}`")
+
+    st.markdown("---")
+    st.subheader("Step 1 — Variant + subject metadata")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        v_gene = st.text_input(
+            "Gene (HGNC symbol)", value="KCNQ3", max_chars=16,
+            key="contrib_gene",
+            help="e.g. KCNQ3, KCNQ2, SCN1A — all uppercase",
+        )
+        v_protein = st.text_input(
+            "Protein change (p.RefXxxNNNAltYyy)",
+            value="p.Arg230His", max_chars=32,
+            key="contrib_protein",
+            help="e.g. p.Arg230His, p.Val252Met, p.Arg230fs",
+        )
+        v_type = st.selectbox(
+            "Variant type",
+            options=["missense_GoF", "missense_LoF", "missense_unknown",
+                      "truncating", "splice", "deletion", "duplication",
+                      "regulatory", "unknown"],
+            key="contrib_vtype",
+        )
+    with col_b:
+        c_age = st.number_input(
+            "Age at recording (years; will be bucketed)",
+            min_value=0.0, max_value=80.0,
+            value=float(age_years) if age_years else 5.0,
+            step=0.5, key="contrib_age",
+        )
+        c_sex = st.selectbox("Sex", options=["F", "M", "X", "unknown"],
+                              key="contrib_sex")
+        c_country = st.text_input(
+            "Country (ISO 3166-1 alpha-2, optional)",
+            value="", max_chars=2, key="contrib_country",
+        )
+
+    st.markdown("---")
+    st.subheader("Step 2 — Recording metadata (bucketed)")
+    col_c, col_d = st.columns(2)
+    with col_c:
+        c_duration = st.number_input(
+            "Duration (hours; will be bucketed)",
+            min_value=0.0, max_value=200.0, value=24.0, step=0.5,
+            key="contrib_dur",
+        )
+        c_channels = st.number_input(
+            "Number of EEG channels",
+            min_value=0, max_value=256, value=19, step=1,
+            key="contrib_nch",
+        )
+    with col_d:
+        c_montage = st.selectbox(
+            "Montage",
+            options=["10-20_monopolar", "10-10_monopolar",
+                      "10-20_bipolar", "double_banana",
+                      "other_monopolar", "other_bipolar", "unknown"],
+            key="contrib_montage",
+        )
+        c_sleep = st.checkbox("Recording included sleep",
+                                value=True, key="contrib_sleep")
+
+    st.markdown("---")
+    st.subheader("Step 3 — Intervention (optional)")
+    c_use_intervention = st.checkbox(
+        "This recording is part of an intervention timeline "
+        "(pre-/post-treatment, follow-up, etc.)",
+        value=False, key="contrib_useint",
+    )
+    int_type = int_name = int_kind = int_link = None
+    if c_use_intervention:
+        col_e, col_f = st.columns(2)
+        with col_e:
+            int_type = st.selectbox(
+                "Intervention type",
+                options=["medication", "diet", "stimulation",
+                          "behavioral", "other"],
+                key="contrib_inttype",
+            )
+            int_name = st.text_input(
+                "Intervention name (≤64 chars; no dates / names allowed)",
+                value="", max_chars=64, key="contrib_intname",
+                help="e.g. 'sultiam', 'ketogenic diet', 'cbd'. "
+                     "Must not contain dates, patient names, or "
+                     "free-form narrative.",
+            )
+        with col_f:
+            int_kind = st.selectbox(
+                "This record is:",
+                options=["baseline", "pre", "post", "followup"],
+                key="contrib_intkind",
+            )
+            int_link = st.text_input(
+                "Linked pre-submission ID (uuid4, optional)",
+                value="", key="contrib_intlink",
+                help="If this is a 'post' record, paste the submission_id "
+                     "of the matching 'pre' record (saved locally).",
+            ) or None
+
+    st.markdown("---")
+    st.subheader("Step 4 — Consent")
+    st.markdown(
+        f"You can read the full consent text at "
+        f"[data/consent_v1.md](https://github.com/{DEFAULT_OWNER}/"
+        f"{DEFAULT_REPO}/blob/main/data/consent_v1.md). Summary:"
+    )
+    st.markdown(
+        "- **What is sent**: variant, age bucket, sex, optional country, "
+        "bucketed duration, quantitative findings (numbers only), "
+        "optional intervention metadata.\n"
+        "- **What is NOT sent**: name, date of birth, exact age, exact "
+        "date, filename, raw EEG, free-text labels.\n"
+        "- **You can withdraw any time** by opening a GitHub issue with "
+        "your `submission_id` (saved locally — see history below)."
+    )
+    c_consent = st.checkbox(
+        f"I affirm consent version {CURRENT_CONSENT_VERSION} "
+        f"and I am the patient or authorized guardian.",
+        value=False, key="contrib_consent",
+    )
+
+    st.markdown("---")
+    st.subheader("Step 5 — Preview")
+
+    # Try to build the submission; show errors inline.
+    submission = None
+    build_error = None
+    if c_consent:
+        try:
+            consent_obj = make_consent(given=True)
+            ui_obj = SubmissionInput(
+                variant_gene=v_gene.strip(),
+                variant_protein=v_protein.strip(),
+                variant_type=v_type,
+                age_years=float(c_age),
+                sex=c_sex,
+                country_region=c_country.strip().upper() or None,
+                duration_hours=float(c_duration),
+                had_sleep=bool(c_sleep),
+                montage=c_montage,
+                n_channels=int(c_channels),
+                intervention_type=int_type,
+                intervention_name=int_name,
+                intervention_record_kind=int_kind,
+                linked_pre_submission_id=int_link,
+            )
+            submission = build_submission(
+                findings=findings,
+                user_input=ui_obj,
+                consent=consent_obj,
+                tool_version=_app_version,
+            )
+        except BuildError as e:
+            build_error = str(e)
+    else:
+        st.info("Tick the consent checkbox to preview the submission.")
+
+    if build_error:
+        st.error(f"Cannot build submission:\n\n{build_error}")
+        st.caption(
+            "Fix the highlighted input above. The submission cannot be "
+            "uploaded until it validates."
+        )
+
+    if submission is not None:
+        # Second-line validation as belt-and-suspenders
+        ok, errors = validate_submission(submission)
+        if not ok:
+            st.error(
+                "Built submission failed self-validation (this should "
+                "not happen — please report):\n"
+                + "\n".join(f"- {e}" for e in errors)
+            )
+        else:
+            phi_findings = scan_for_phi(submission)
+            if phi_findings:
+                st.error("PHI scan flagged the submission:\n"
+                         + "\n".join(f"- {p}" for p in phi_findings))
+            else:
+                st.success("✅ Submission validates and PHI scan clean.")
+                with st.expander("Show submission preview "
+                                  "(everything that will be sent)",
+                                  expanded=True):
+                    st.markdown(submission_summary_md(submission))
+                with st.expander("Show raw JSON"):
+                    st.code(json.dumps(submission, indent=2),
+                            language="json")
+
+                st.markdown("---")
+                st.subheader("Step 6 — Submit")
+                issue_url = build_issue_url(submission)
+
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.link_button(
+                        "🌐 Open pre-filled GitHub issue",
+                        issue_url, use_container_width=True,
+                    ):
+                        pass
+                with col_btn2:
+                    if st.button("📋 Copy JSONL line to clipboard",
+                                  use_container_width=True,
+                                  key="contrib_copybtn"):
+                        st.session_state["contrib_clipboard"] = (
+                            to_jsonl_line(submission)
+                        )
+
+                if "contrib_clipboard" in st.session_state:
+                    st.code(st.session_state["contrib_clipboard"],
+                            language="json")
+                    st.caption(
+                        "Paste this into `data/registry.jsonl` in a fork "
+                        "of the registry repo if you prefer a direct PR."
+                    )
+
+                if st.button(
+                    "📝 Record this submission locally "
+                    "(so you can withdraw it later)",
+                    key="contrib_logbtn",
+                ):
+                    try:
+                        _registry_db.record_submission(
+                            submission_id=submission["submission_id"],
+                            submission=submission,
+                            issue_url=issue_url,
+                        )
+                        st.success(
+                            f"Recorded locally. Your submission ID is "
+                            f"`{submission['submission_id']}` — "
+                            f"save it somewhere safe."
+                        )
+                    except Exception as e:
+                        st.error(f"Could not record locally: {e}")
+
+    # ── Local submission history (withdrawal lookup) ────────────────────
+    st.markdown("---")
+    st.subheader("Your local submission history")
+    st.caption("Only stored on this device. Use the IDs here to withdraw.")
+    history = _registry_db.list_submissions_log()
+    if not history:
+        st.write("_(no submissions logged on this device yet)_")
+    else:
+        for h in history:
+            sub = h["submission"]
+            subj = sub.get("subject", {})
+            st.markdown(
+                f"- `{h['submission_id']}` — "
+                f"{subj.get('variant_gene','?')} "
+                f"{subj.get('variant_protein','?')} "
+                f"({subj.get('age_years_bucket','?')}, "
+                f"{subj.get('sex','?')}) — "
+                f"opened {h['opened_at']}"
+            )
 
 
 # ═══════════════════════════════════════════════════════════════════════════

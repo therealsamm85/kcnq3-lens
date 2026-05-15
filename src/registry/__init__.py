@@ -21,6 +21,10 @@ from .buckets import (
     bucket_age_years, bucket_duration_hours,
     AGE_BUCKETS, DURATION_BUCKETS,
 )
+from .upload import (
+    build_issue_url, submission_summary_md, to_jsonl_line,
+    DEFAULT_OWNER, DEFAULT_REPO,
+)
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -30,4 +34,6 @@ __all__ = [
     "scan_for_phi", "is_clean",
     "bucket_age_years", "bucket_duration_hours",
     "AGE_BUCKETS", "DURATION_BUCKETS",
+    "build_issue_url", "submission_summary_md", "to_jsonl_line",
+    "DEFAULT_OWNER", "DEFAULT_REPO",
 ]

@@ -134,11 +134,12 @@ try:
     titles_found = any("KCNQ3-Lens" in t.value for t in at.title)
     check("Main title 'KCNQ3-Lens' renders", titles_found)
 
-    # Mode radio has the four modes
+    # Mode radio has the five modes (Quick Start / Single / Compare /
+    # Longitudinal / Contribute — v0.12.3 added Contribute)
     radio = at.sidebar.radio[0] if at.sidebar.radio else None
     if radio is not None:
-        check("Mode radio has 4 options",
-              len(radio.options) == 4)
+        check("Mode radio has 5 options",
+              len(radio.options) == 5)
         check("First mode is Quick Start (default)",
               radio.options[0].startswith("🎯") or "Quick" in radio.options[0])
 except Exception as e:

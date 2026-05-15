@@ -147,6 +147,16 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_diary_date ON diary(date);
+        CREATE TABLE IF NOT EXISTS submissions_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            submission_id TEXT NOT NULL UNIQUE,
+            opened_at TEXT NOT NULL,
+            issue_url TEXT NOT NULL DEFAULT '',
+            submission_json TEXT NOT NULL,
+            UNIQUE(submission_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_submissions_log_opened
+            ON submissions_log(opened_at);
     """)
     _apply_migrations(conn)
 
@@ -389,6 +399,78 @@ def insert_diary(
             ),
         )
         return int(cur.lastrowid)
+
+
+def record_submission(
+    *,
+    submission_id: str,
+    submission: dict[str, Any],
+    issue_url: str = "",
+    opened_at: str | None = None,
+    db_path: Path | str | None = None,
+) -> int:
+    """Record that the family opened a GitHub issue for a submission.
+
+    `opened_at` is the moment the issue URL was constructed, which is
+    when the family clicked through. Returns the row id.
+    """
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "INSERT INTO submissions_log("
+            "submission_id, opened_at, issue_url, submission_json) "
+            "VALUES(?,?,?,?)",
+            (
+                submission_id,
+                opened_at or _now_iso(),
+                issue_url or "",
+                json.dumps(submission, default=str),
+            ),
+        )
+        return int(cur.lastrowid)
+
+
+def list_submissions_log(
+    db_path: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    """Return all submission-log rows, newest first."""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, submission_id, opened_at, issue_url, "
+            "submission_json FROM submissions_log "
+            "ORDER BY opened_at DESC"
+        ).fetchall()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        out.append({
+            "id": r["id"],
+            "submission_id": r["submission_id"],
+            "opened_at": r["opened_at"],
+            "issue_url": r["issue_url"],
+            "submission": _safe_json_loads(r["submission_json"], default={}),
+        })
+    return out
+
+
+def find_submission_in_log(
+    submission_id: str, db_path: Path | str | None = None,
+) -> dict[str, Any] | None:
+    """Look up one logged submission by its uuid."""
+    with connect(db_path) as conn:
+        r = conn.execute(
+            "SELECT id, submission_id, opened_at, issue_url, "
+            "submission_json FROM submissions_log "
+            "WHERE submission_id = ?",
+            (submission_id,),
+        ).fetchone()
+    if not r:
+        return None
+    return {
+        "id": r["id"],
+        "submission_id": r["submission_id"],
+        "opened_at": r["opened_at"],
+        "issue_url": r["issue_url"],
+        "submission": _safe_json_loads(r["submission_json"], default={}),
+    }
 
 
 def list_diary(
