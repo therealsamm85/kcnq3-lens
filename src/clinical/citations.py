@@ -187,6 +187,53 @@ CITATIONS: dict[str, Citation] = {
             "Shows frontal predominance and developmental trajectory."
         ),
     ),
+    "staba_hfo": Citation(
+        key="staba_hfo",
+        short="Staba et al. 2002",
+        full=(
+            "Staba RJ, Wilson CL, Bragin A, Fried I, Engel J Jr. "
+            "Quantitative analysis of high-frequency oscillations (80-500 Hz) "
+            "recorded in human epileptic hippocampus and entorhinal cortex. "
+            "J Neurophysiol 2002;88(4):1743-1752."
+        ),
+        pubmed_id="12239031",
+        url="https://pubmed.ncbi.nlm.nih.gov/12239031/",
+        note=(
+            "Original energy-based HFO detector; ripple (80–250 Hz) and "
+            "fast-ripple (250–500 Hz) bands defined; intracranial recording."
+        ),
+    ),
+    "burnos_hfo": Citation(
+        key="burnos_hfo",
+        short="Burnos et al. 2014",
+        full=(
+            "Burnos S, Frauscher B, Zelmann R, Haegelen C, Sarnthein J, "
+            "Gotman J. Human intracranial high frequency oscillations (HFOs) "
+            "detected during NREM sleep mirror the seizure onset zone. "
+            "Clin Neurophysiol 2014;125(3):532-540."
+        ),
+        pubmed_id="24747572",
+        url="https://pubmed.ncbi.nlm.nih.gov/24747572/",
+        note=(
+            "Frequency-specificity criterion: true HFOs have ripple-band power "
+            "≥2× high-band power; rejects broad-band transients."
+        ),
+    ),
+    "kuhnke_scalp_hfo": Citation(
+        key="kuhnke_scalp_hfo",
+        short="Kuhnke et al. 2018",
+        full=(
+            "Kuhnke N, Schönberger E, Rebenklau R, Kiess W, Merkenschlager A, "
+            "Bernhard MK. Spike ripples and fast ripples in childhood epilepsy "
+            "with centrotemporal spikes. Clin Neurophysiol 2018;129(12):2450-2456."
+        ),
+        pubmed_id="30215099",
+        url="https://pubmed.ncbi.nlm.nih.gov/30215099/",
+        note=(
+            "Scalp HFOs in childhood epilepsy with centrotemporal spikes; "
+            "demonstrates feasibility of scalp-level ripple detection in pediatric EEG."
+        ),
+    ),
 }
 
 
@@ -215,4 +262,5 @@ def methods_attribution() -> dict[str, str]:
         "background": "hagne_pdr",
         "morphology": "binnie_tci",   # for cognitive-relevance framing
         "slow_waves": "massimini_sw",
+        "hfo_ripples": "staba_hfo",
     }

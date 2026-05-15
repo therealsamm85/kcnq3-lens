@@ -37,6 +37,7 @@ from .analyses.state_split import summarize_state_split
 from .analyses.synchrony import summarize_synchrony
 from .analyses.sleep_architecture import summarize_sleep_architecture
 from .analyses.slow_waves import summarize_slow_waves
+from .analyses.hfo_ripples import compute_hfo_ripples, summarize_hfo_ripples
 from .clinical.impression import build_impression, build_recommendations
 from .clinical.negative_findings import build_negative_findings
 from .utils.sanitize import safe_round_dict
@@ -215,6 +216,23 @@ def run_all_analyses(
         findings["_slow_waves_events"] = sw.events
     except Exception as e:
         errors["slow_waves"] = str(e)
+
+    # --- 11c. HFO ripples (v0.13.1) — Tier 2 ---
+    try:
+        _age = getattr(rec, 'age_years', None) or age_years
+        hfo = compute_hfo_ripples(
+            rec,
+            sleep_stages=sleep_stage_result,
+            channel="Cz",
+            line_freq_hz=50.0,
+            age_years=_age,
+            morphology_events=findings.get("_morphology_events"),
+        )
+        findings["hfo_ripples"] = summarize_hfo_ripples(hfo)
+        # Preserve raw events under private key (analogous to _slow_waves_events)
+        findings["_hfo_ripples_events"] = hfo.events
+    except Exception as e:
+        findings["hfo_ripples"] = {"available": False, "error": str(e)}
 
     # --- 12. Clinical impression + recommendations (v0.6) ---
     # Built from all preceding findings; deterministic, no LLM.
