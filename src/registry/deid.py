@@ -1,0 +1,471 @@
+"""De-identifying submission builder — the only sanctioned path from
+local findings to a registry-shaped submission JSON.
+
+Threat model
+------------
+The local SQLite DB may contain anything: filenames with patient names,
+free-text labels with dates, indication fields with narrative text,
+embedded PHI from EDF headers, etc. Our job is to produce a JSON that
+contains NONE of that — only the bucketed quantitative outputs we
+actually want to aggregate.
+
+Defense strategy: ALLOWLIST BY CONSTRUCTION
+-------------------------------------------
+We never copy a dict wholesale. We never traverse `findings` and pull
+"whatever is there." Instead, the builder reads specific keys by name
+and either:
+  - copies the value if it passes type + range checks, or
+  - sets the field to None (or omits it) if it doesn't.
+
+Anything not listed in `_EXTRACTORS` below is structurally invisible to
+the output. New fields are added by adding extractors, never by relaxing
+the walker.
+
+After construction we run a PHI scan (`phi_check.scan_for_phi`) as a
+belt-and-suspenders check. If anything trips, the build fails.
+
+Public API
+----------
+- `SubmissionInput`: typed dataclass for family-provided context
+  (variant, age, sex, intervention, ...). All fields go through bucket
+  + enum validation before any string lands in the submission.
+- `build_submission(...)`: returns the submission dict or raises
+  `BuildError` with the human-readable reason.
+
+The output is JSON-serializable (`json.dumps(result)` always works)
+and matches `schema.SCHEMA_VERSION`.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Callable
+
+from . import schema as _schema
+from . import buckets as _buckets
+from . import phi_check
+from .consent import Consent, CURRENT_CONSENT_VERSION
+
+
+class BuildError(ValueError):
+    """Raised when a submission cannot be built safely. Message is
+    human-readable and intended for direct display in the UI."""
+
+
+@dataclass
+class SubmissionInput:
+    """Family-provided context for one submission.
+
+    Every field has tight validation. Free text is NOT accepted except
+    where explicitly allowed (intervention_name)."""
+
+    variant_gene: str                          # e.g. "KCNQ3"
+    variant_protein: str                       # e.g. "p.Arg230His"
+    variant_type: str                          # one of schema.VARIANT_TYPES
+    age_years: float | int                     # exact, bucketed internally
+    sex: str                                   # one of schema.SEX_VALUES
+    country_region: str | None = None          # ISO 3166 alpha-2, optional
+
+    # Recording metadata (exact values, bucketed/normalized internally)
+    duration_hours: float = 0.0
+    had_sleep: bool = False
+    montage: str = "unknown"                   # one of schema.MONTAGE_VALUES
+    n_channels: int = 0
+
+    # Intervention (all optional; either all set or all None)
+    intervention_type: str | None = None       # schema.INTERVENTION_TYPES
+    intervention_name: str | None = None
+    intervention_record_kind: str | None = None  # schema.INTERVENTION_RECORD_KINDS
+    linked_pre_submission_id: str | None = None
+
+
+# ─── Per-finding extractors ────────────────────────────────────────────────
+#
+# Each extractor is a function (findings: dict) -> value-or-None.
+# It KNOWS which key it cares about. It NEVER traverses or returns
+# anything outside the value at that key. Failure to find or validate
+# returns None — the output simply omits the field.
+
+def _extract_pdr_hz(f: dict) -> float | None:
+    bg = f.get("background") if isinstance(f, dict) else None
+    if not isinstance(bg, dict):
+        return None
+    v = bg.get("pdr_hz")
+    if isinstance(v, (int, float)) and 0.5 <= float(v) <= 20.0:
+        return float(v)
+    return None
+
+
+def _extract_swi_by_stage(f: dict) -> dict[str, float] | None:
+    swi = f.get("swi") if isinstance(f, dict) else None
+    if not isinstance(swi, dict):
+        return None
+    raw = swi.get("swi_per_stage_pct")
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, float] = {}
+    for k, v in raw.items():
+        if k in _schema.SLEEP_STAGE_KEYS and _schema._is_pct(v):
+            out[k] = float(v)
+    return out or None
+
+
+def _extract_csws_met(f: dict) -> bool | None:
+    swi = f.get("swi") if isinstance(f, dict) else None
+    if not isinstance(swi, dict):
+        return None
+    v = swi.get("csws_criterion_met")
+    return bool(v) if isinstance(v, bool) else None
+
+
+def _extract_csws_threshold(f: dict) -> float | None:
+    swi = f.get("swi") if isinstance(f, dict) else None
+    if not isinstance(swi, dict):
+        return None
+    v = swi.get("csws_threshold_pct")
+    if _schema._is_pct(v):
+        return float(v)
+    return None
+
+
+def _extract_spindle_density(f: dict) -> float | None:
+    sp = f.get("spindles") if isinstance(f, dict) else None
+    if not isinstance(sp, dict):
+        return None
+    v = sp.get("density_per_minute")
+    if _schema._is_nonneg_finite(v) and float(v) < 100.0:
+        return float(v)
+    return None
+
+
+def _extract_spindle_norm_range(f: dict) -> list[float] | None:
+    sp = f.get("spindles") if isinstance(f, dict) else None
+    if not isinstance(sp, dict):
+        return None
+    r = sp.get("age_normative_range")
+    if (
+        isinstance(r, (list, tuple))
+        and len(r) == 2
+        and all(_schema._is_nonneg_finite(x) for x in r)
+    ):
+        return [float(r[0]), float(r[1])]
+    return None
+
+
+def _extract_spindle_interp(f: dict) -> str | None:
+    sp = f.get("spindles") if isinstance(f, dict) else None
+    if not isinstance(sp, dict):
+        return None
+    v = sp.get("interpretation")
+    return v if v in _schema.SPINDLE_INTERPRETATIONS else None
+
+
+def _extract_activation_factor(f: dict) -> float | None:
+    st = f.get("state_split") if isinstance(f, dict) else None
+    if not isinstance(st, dict):
+        return None
+    v = st.get("activation_factor")
+    if _schema._is_nonneg_finite(v) and float(v) < 10_000.0:
+        return float(v)
+    return None
+
+
+def _extract_activation_label(f: dict) -> str | None:
+    st = f.get("state_split") if isinstance(f, dict) else None
+    if not isinstance(st, dict):
+        return None
+    v = st.get("activation_label")
+    return v if v in _schema.ACTIVATION_LABELS else None
+
+
+def _extract_morphology_per_min(f: dict) -> float | None:
+    m = f.get("morphology") if isinstance(f, dict) else None
+    if not isinstance(m, dict):
+        return None
+    v = m.get("events_per_minute")
+    if _schema._is_nonneg_finite(v) and float(v) < 10_000.0:
+        return float(v)
+    return None
+
+
+def _extract_morphology_sw_pct(f: dict) -> float | None:
+    m = f.get("morphology") if isinstance(f, dict) else None
+    if not isinstance(m, dict):
+        return None
+    v = m.get("pct_complex_spike_wave")
+    if _schema._is_pct(v):
+        return float(v)
+    return None
+
+
+def _extract_sleep_stages_pct(f: dict) -> dict[str, float] | None:
+    ss = f.get("sleep_stages") if isinstance(f, dict) else None
+    if not isinstance(ss, dict):
+        return None
+    raw = ss.get("stage_pct") or ss.get("stages_pct")
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, float] = {}
+    for k, v in raw.items():
+        if k in _schema.SLEEP_STAGE_KEYS and _schema._is_pct(v):
+            out[k] = float(v)
+    return out or None
+
+
+def _extract_n_sleep_cycles(f: dict) -> int | None:
+    arch = f.get("sleep_architecture") if isinstance(f, dict) else None
+    if not isinstance(arch, dict):
+        return None
+    v = arch.get("n_cycles")
+    if isinstance(v, int) and 0 <= v <= 100:
+        return v
+    return None
+
+
+def _extract_quality_grade(f: dict) -> str | None:
+    q = f.get("quality") if isinstance(f, dict) else None
+    if not isinstance(q, dict):
+        return None
+    v = q.get("grade")
+    return v if v in _schema.QUALITY_GRADES else None
+
+
+# Order matters only for diff readability; semantics are independent.
+_EXTRACTORS: dict[str, Callable[[dict], Any]] = {
+    "background_pdr_hz": _extract_pdr_hz,
+    "swi_pct_by_stage": _extract_swi_by_stage,
+    "csws_criterion_met": _extract_csws_met,
+    "csws_threshold_pct": _extract_csws_threshold,
+    "spindle_density_per_min_central": _extract_spindle_density,
+    "spindle_age_norm_range": _extract_spindle_norm_range,
+    "spindle_interpretation": _extract_spindle_interp,
+    "activation_factor": _extract_activation_factor,
+    "activation_label": _extract_activation_label,
+    "morphology_events_per_min": _extract_morphology_per_min,
+    "morphology_spike_wave_pct": _extract_morphology_sw_pct,
+    "sleep_stages_pct": _extract_sleep_stages_pct,
+    "n_sleep_cycles": _extract_n_sleep_cycles,
+    "quality_grade": _extract_quality_grade,
+}
+
+
+# ─── Builder ───────────────────────────────────────────────────────────────
+
+def build_submission(
+    *,
+    findings: dict,
+    user_input: SubmissionInput,
+    consent: Consent,
+    tool_version: str,
+    submission_id: str | None = None,
+    now: datetime | None = None,
+) -> dict:
+    """Build a registry-shaped submission JSON.
+
+    Raises BuildError if any input is invalid, consent is missing,
+    or the final submission trips the PHI scanner.
+
+    All time-dependent values use `now` (default: datetime.now()) so
+    tests can pin the clock.
+    """
+    if not consent or not isinstance(consent, Consent):
+        raise BuildError("consent record is required")
+    if not consent.given:
+        raise BuildError("consent has not been given; refusing to build")
+    if consent.version != CURRENT_CONSENT_VERSION:
+        raise BuildError(
+            f"consent version {consent.version} does not match current "
+            f"version {CURRENT_CONSENT_VERSION}; please re-affirm"
+        )
+
+    # Validate user_input — every field gets reconstructed, never copied
+    # through wholesale.
+    ui = _validate_user_input(user_input)
+
+    now = now or datetime.now()
+    sid = submission_id or str(uuid.uuid4())
+    if not _schema.UUID4_RE.match(sid):
+        raise BuildError(f"submission_id is not a valid uuid4: {sid!r}")
+
+    submission_month = now.strftime("%Y-%m")
+
+    findings_out: dict[str, Any] = {}
+    for field_name, extractor in _EXTRACTORS.items():
+        try:
+            value = extractor(findings)
+        except Exception:
+            value = None  # extractors must never crash the build
+        if value is not None:
+            findings_out[field_name] = value
+
+    intervention_out: dict[str, Any] | None = None
+    if ui["intervention_type"] is not None:
+        intervention_out = {
+            "type": ui["intervention_type"],
+            "name": ui["intervention_name"],
+            "record_kind": ui["intervention_record_kind"],
+            "linked_pre_submission_id": ui["linked_pre_submission_id"],
+        }
+
+    submission = {
+        "submission_id": sid,
+        "schema_version": _schema.SCHEMA_VERSION,
+        "submitted_at_month": submission_month,
+        "consent": {
+            "version": consent.version,
+            "given": consent.given,
+            "given_at_month": consent.given_at_month,
+        },
+        "subject": {
+            "variant_gene": ui["variant_gene"],
+            "variant_protein": ui["variant_protein"],
+            "variant_type": ui["variant_type"],
+            "age_years_bucket": ui["age_years_bucket"],
+            "sex": ui["sex"],
+            "country_region": ui["country_region"],
+        },
+        "recording": {
+            "duration_hours_bucket": ui["duration_hours_bucket"],
+            "had_sleep": ui["had_sleep"],
+            "montage": ui["montage"],
+            "n_channels": ui["n_channels"],
+        },
+        "findings": findings_out,
+        "intervention": intervention_out,
+        "tool_version": tool_version,
+    }
+
+    # Belt-and-suspenders: scan the OUTPUT for PHI patterns.
+    phi_findings = phi_check.scan_for_phi(submission)
+    if phi_findings:
+        raise BuildError(
+            "PHI scan flagged the constructed submission:\n  "
+            + "\n  ".join(phi_findings)
+        )
+
+    return submission
+
+
+# ─── Validation helpers ────────────────────────────────────────────────────
+
+def _validate_user_input(ui: SubmissionInput) -> dict[str, Any]:
+    """Reconstruct each user-input field with strict validation.
+
+    Returns a dict of cleaned values. Raises BuildError on any rejection.
+    """
+    if not isinstance(ui, SubmissionInput):
+        raise BuildError("user_input must be a SubmissionInput instance")
+
+    # Gene
+    g = ui.variant_gene or ""
+    if not _schema.GENE_SYMBOL_RE.match(g):
+        raise BuildError(
+            f"variant_gene {g!r} does not match HGNC-style symbol "
+            f"(2-16 uppercase chars)"
+        )
+
+    # Variant protein
+    p = ui.variant_protein or ""
+    if not _schema.VARIANT_PROTEIN_RE.match(p):
+        raise BuildError(
+            f"variant_protein {p!r} is not in p.RefXxxNNNAltYyy form"
+        )
+
+    # Variant type
+    if ui.variant_type not in _schema.VARIANT_TYPES:
+        raise BuildError(
+            f"variant_type {ui.variant_type!r} not in "
+            f"{sorted(_schema.VARIANT_TYPES)}"
+        )
+
+    # Age → bucket
+    age_bucket = _buckets.bucket_age_years(ui.age_years)
+    if age_bucket is None:
+        raise BuildError(f"age_years {ui.age_years!r} could not be bucketed")
+
+    # Sex
+    if ui.sex not in _schema.SEX_VALUES:
+        raise BuildError(f"sex {ui.sex!r} not in {sorted(_schema.SEX_VALUES)}")
+
+    # Country
+    country = ui.country_region
+    if country is not None:
+        if not _schema.COUNTRY_RE.match(country):
+            raise BuildError(
+                f"country_region {country!r} not ISO 3166-1 alpha-2"
+            )
+
+    # Duration → bucket
+    dur_bucket = _buckets.bucket_duration_hours(ui.duration_hours)
+    if dur_bucket is None:
+        raise BuildError(
+            f"duration_hours {ui.duration_hours!r} could not be bucketed"
+        )
+
+    # Montage
+    if ui.montage not in _schema.MONTAGE_VALUES:
+        raise BuildError(
+            f"montage {ui.montage!r} not in {sorted(_schema.MONTAGE_VALUES)}"
+        )
+
+    # n_channels
+    if not isinstance(ui.n_channels, int) or not (0 <= ui.n_channels <= 256):
+        raise BuildError(
+            f"n_channels {ui.n_channels!r} must be an int in [0, 256]"
+        )
+
+    had_sleep = bool(ui.had_sleep)
+
+    # Intervention: all-or-nothing.
+    itype = ui.intervention_type
+    iname = ui.intervention_name
+    ikind = ui.intervention_record_kind
+    ilink = ui.linked_pre_submission_id
+    if itype is not None:
+        if itype not in _schema.INTERVENTION_TYPES:
+            raise BuildError(
+                f"intervention_type {itype!r} not in "
+                f"{sorted(_schema.INTERVENTION_TYPES)}"
+            )
+        if not isinstance(iname, str) or not iname.strip():
+            raise BuildError("intervention_name is required when type is set")
+        if len(iname) > _schema.INTERVENTION_NAME_MAX_LEN:
+            raise BuildError(
+                f"intervention_name longer than "
+                f"{_schema.INTERVENTION_NAME_MAX_LEN} chars"
+            )
+        # Strip surrounding whitespace; PHI scan will handle anything wild.
+        iname = iname.strip()
+        if ikind not in _schema.INTERVENTION_RECORD_KINDS:
+            raise BuildError(
+                f"intervention_record_kind {ikind!r} not in "
+                f"{sorted(_schema.INTERVENTION_RECORD_KINDS)}"
+            )
+        if ilink is not None and not _schema.UUID4_RE.match(ilink):
+            raise BuildError(
+                f"linked_pre_submission_id {ilink!r} is not a uuid4"
+            )
+    else:
+        # Force the dependents to None if the type isn't set
+        iname = None
+        ikind = None
+        ilink = None
+
+    return {
+        "variant_gene": g,
+        "variant_protein": p,
+        "variant_type": ui.variant_type,
+        "age_years_bucket": age_bucket,
+        "sex": ui.sex,
+        "country_region": country,
+        "duration_hours_bucket": dur_bucket,
+        "had_sleep": had_sleep,
+        "montage": ui.montage,
+        "n_channels": ui.n_channels,
+        "intervention_type": itype,
+        "intervention_name": iname,
+        "intervention_record_kind": ikind,
+        "linked_pre_submission_id": ilink,
+    }
