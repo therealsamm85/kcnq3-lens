@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -558,6 +559,132 @@ def _render_findings_tabs(findings: dict, key_prefix: str = ""):
             mime="application/json",
             key=f"download_{key_prefix or 'single'}",
         )
+
+
+def _render_peer_comparison(
+    findings: dict,
+    *,
+    age_years: float | None,
+    variant: str | None,
+    key_prefix: str = "",
+):
+    """Render the cohort peer-comparison panel for one set of findings.
+
+    Backed by the federated registry aggregates (v0.12.4). If the
+    fetch fails or no matching cohort exists, hides itself gracefully.
+    """
+    from src.registry import aggregates as _agg
+    from src.registry import bucket_age_years as _ba
+
+    st.subheader("🌍 Peer comparison (federated cohort)")
+    st.caption(
+        "Compares this child's quantitative findings to a k-anonymized "
+        "cohort of families who contributed data. Aggregates are "
+        "downloaded from the public registry and cached locally for 24h. "
+        "**This is research context, not diagnosis.**"
+    )
+
+    # Resolve variant gene/protein heuristically from the sidebar
+    # 'variant' string. Format expected: "GENE p.RefXxxNnnAltYyy"
+    # (whitespace-separated). Be tolerant.
+    v = (variant or "").strip()
+    parts = v.split()
+    gene = parts[0] if parts else "KCNQ3"
+    protein = parts[1] if len(parts) > 1 else None
+    age_bucket = _ba(age_years) if age_years is not None else None
+
+    col_a, col_b = st.columns([4, 1])
+    with col_b:
+        force = st.button("🔄 Refresh", key=f"{key_prefix}_peer_refresh")
+    cache, warn = _agg.get_aggregates(force_refresh=force)
+    if warn:
+        with col_a:
+            st.warning(warn)
+    if cache is None:
+        st.info(
+            "No peer-comparison data yet (registry has fewer than the "
+            "k-anonymity threshold of submissions, or the network is "
+            "unavailable and no cache exists)."
+        )
+        return
+
+    cell = _agg.find_best_cell(
+        cache, variant_gene=gene, variant_protein=protein,
+        age_years_bucket=age_bucket, sex=None,
+    )
+    if cell is None or not cell.get("stats"):
+        st.info(
+            f"No matching cohort for `{gene} {protein or ''}` "
+            f"(age `{age_bucket}`). The cohort may not yet have "
+            f"k≥5 submissions matching this variant."
+        )
+        return
+
+    st.markdown(f"**Cohort:** {_agg.cohort_summary(cell)}")
+    st.caption(
+        f"Stats refreshed "
+        f"{(time.time() - cache.fetched_at) / 3600.0:.1f}h ago. "
+        f"Aggregates published with k_min = "
+        f"{cache.payload.get('k_min', '?')} per cell."
+    )
+
+    # Map local findings → registry field names → cell stat block
+    METRIC_MAP: list[tuple[str, str, callable]] = [
+        ("background_pdr_hz", "PDR (Hz)",
+         lambda f: (f.get("background") or {}).get("pdr_hz")),
+        ("spindle_density_per_min_central", "Spindle density (/min)",
+         lambda f: (f.get("spindles") or {}).get("density_per_minute")),
+        ("activation_factor", "Sleep activation factor",
+         lambda f: (f.get("state_split") or {}).get("activation_factor")),
+        ("morphology_events_per_min", "Events/min",
+         lambda f: (f.get("morphology") or {}).get("events_per_minute")),
+        ("morphology_spike_wave_pct", "Complex spike-wave (%)",
+         lambda f: (f.get("morphology") or {}).get(
+             "pct_complex_spike_wave")),
+    ]
+
+    rows = []
+    for stat_key, label, getter in METRIC_MAP:
+        if stat_key not in cell["stats"]:
+            continue
+        local_val = getter(findings)
+        if local_val is None:
+            continue
+        stat = cell["stats"][stat_key]
+        pct = _agg.percentile_rank(local_val, stat)
+        rows.append({
+            "Metric": label,
+            "This child": (
+                f"{local_val:.2f}"
+                if isinstance(local_val, (int, float))
+                else str(local_val)
+            ),
+            "Cohort median": f"{stat.get('median', '?'):.2f}",
+            "Cohort p25–p75": (
+                f"{stat.get('p25', '?'):.2f}–{stat.get('p75', '?'):.2f}"
+            ),
+            "Percentile": (
+                f"{pct:.0f}%" if pct is not None else "—"
+            ),
+            "n in cohort": stat.get("n", "?"),
+        })
+
+    if not rows:
+        st.info(
+            "No quantitative findings in this recording match any "
+            "metric the cohort publishes. Peer comparison hidden."
+        )
+        return
+
+    st.dataframe(pd.DataFrame(rows), use_container_width=True,
+                 hide_index=True)
+    st.caption(
+        "**Reading the percentile column:** 50% means this child is "
+        "at the cohort median. Values near 0% or 100% mean this child "
+        "is in the tail of the distribution — clinically meaningful "
+        "but with small cohorts the tails are noisy. Never act on "
+        "peer-comparison alone."
+    )
 
 
 def _render_insights(findings: dict, key_prefix: str = ""):
@@ -1162,6 +1289,13 @@ elif mode == "single":
         # Proactive insights (rule-based, no LLM)
         st.markdown("---")
         _render_insights(findings, key_prefix="single")
+
+        # Peer comparison (v0.12.4) — fetched from registry aggregates
+        st.markdown("---")
+        _render_peer_comparison(
+            findings, age_years=age_years, variant=variant,
+            key_prefix="single",
+        )
 
         # AI interpretation
         st.markdown("---")

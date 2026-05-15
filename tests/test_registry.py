@@ -737,6 +737,161 @@ except _sqlite3.IntegrityError:
     check("duplicate submission_id is rejected by UNIQUE", True)
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# v0.12.4 — aggregates download, cache, lookup, percentile
+# ═══════════════════════════════════════════════════════════════════════
+
+section("v0.12.4 — aggregates lookup + percentile rank")
+
+from src.registry import aggregates as _agg
+import tempfile as _tf4, time as _time
+
+# Build a synthetic aggregates payload mirroring what the registry CI
+# would produce
+fake_agg = {
+    "schema_version": 1,
+    "generated_at_utc": "2026-05-01T00:00:00+00:00",
+    "k_min": 5,
+    "n_submissions": 30,
+    "n_cells_published": 2,
+    "cells": [
+        {
+            "cell": {
+                "level": "gene_protein_age_sex",
+                "variant_gene": "KCNQ3",
+                "variant_protein": "p.Arg230His",
+                "age_years_bucket": "5-7",
+                "sex": "F",
+            },
+            "n": 12,
+            "stats": {
+                "background_pdr_hz": {
+                    "n": 12, "mean": 7.5, "sd": 0.6, "median": 7.5,
+                    "p10": 6.5, "p25": 7.0, "p75": 8.0, "p90": 8.5,
+                    "min": 6.0, "max": 9.0,
+                },
+                "spindle_density_per_min_central": {
+                    "n": 12, "mean": 0.7, "sd": 0.2, "median": 0.7,
+                    "p10": 0.4, "p25": 0.55, "p75": 0.85, "p90": 1.0,
+                },
+            },
+            "categorical": {
+                "csws_criterion_met": {"true": 2, "false": 10},
+            },
+        },
+        {
+            "cell": {
+                "level": "gene",
+                "variant_gene": "KCNQ3",
+            },
+            "n": 30,
+            "stats": {
+                "background_pdr_hz": {
+                    "n": 30, "mean": 7.4, "sd": 0.7, "median": 7.4,
+                    "p10": 6.4, "p25": 6.9, "p75": 7.9, "p90": 8.4,
+                },
+            },
+            "categorical": {},
+        },
+    ],
+}
+
+# Structural validation
+check("valid aggregates pass shape check",
+      _agg._validate_aggregates_shape(fake_agg))
+check("non-dict rejected",
+      not _agg._validate_aggregates_shape([]))
+check("wrong schema_version rejected",
+      not _agg._validate_aggregates_shape({"schema_version": 99,
+                                            "cells": []}))
+check("missing cells rejected",
+      not _agg._validate_aggregates_shape({"schema_version": 1}))
+
+# Find best cell — finest match
+best = _agg.find_best_cell(
+    fake_agg, variant_gene="KCNQ3",
+    variant_protein="p.Arg230His",
+    age_years_bucket="5-7", sex="F",
+)
+check("finest-level match returned",
+      best is not None
+      and best["cell"]["level"] == "gene_protein_age_sex")
+
+# Fall back to coarser cell when finest doesn't exist
+fallback = _agg.find_best_cell(
+    fake_agg, variant_gene="KCNQ3",
+    variant_protein="p.Arg230His",
+    age_years_bucket="10-13", sex="M",
+)
+check("falls back to gene when finer cells absent",
+      fallback is not None
+      and fallback["cell"]["level"] == "gene")
+
+# No match → None
+none_match = _agg.find_best_cell(fake_agg, variant_gene="SCN1A")
+check("unknown gene returns None", none_match is None)
+
+# Percentile rank — value at median is ~50
+stat = best["stats"]["background_pdr_hz"]
+p50 = _agg.percentile_rank(7.5, stat)
+check(f"value at median → ~50pct (got {p50})", abs(p50 - 50.0) < 1e-6)
+p10_val = _agg.percentile_rank(6.5, stat)
+check(f"value at p10 → ~10pct (got {p10_val})", abs(p10_val - 10.0) < 1e-6)
+p90_val = _agg.percentile_rank(8.5, stat)
+check(f"value at p90 → ~90pct (got {p90_val})", abs(p90_val - 90.0) < 1e-6)
+below_min = _agg.percentile_rank(2.0, stat)
+check("value below min clamps to 0",
+      below_min is not None and below_min <= 1e-6)
+above_max = _agg.percentile_rank(99.0, stat)
+check("value above max clamps to 100",
+      above_max is not None and above_max >= 100.0 - 1e-6)
+
+# Interpolation between anchors
+between = _agg.percentile_rank(7.25, stat)  # halfway between p25 and median
+check(f"interpolated percentile (got {between})",
+      between is not None and 25.0 < between < 50.0)
+
+# Bad inputs
+check("None value returns None",
+      _agg.percentile_rank(None, stat) is None)
+check("string value returns None",
+      _agg.percentile_rank("seven", stat) is None)
+check("empty stat returns None",
+      _agg.percentile_rank(7.5, {}) is None)
+check("stat with only one anchor returns None",
+      _agg.percentile_rank(7.5, {"median": 7.5}) is None)
+
+
+section("v0.12.4 — cache load/save + cohort summary")
+
+# Cache round-trip via env-isolated dir
+cache_dir = Path(_tf4.mkdtemp(prefix="kcnq3_aggcache_"))
+import os as _os4
+_os4.environ["KCNQ3_LENS_DATA"] = str(cache_dir)
+
+cache_obj = _agg.AggregatesCache(
+    fetched_at=_time.time(), source_url="https://example/aggregates.json",
+    payload=fake_agg,
+)
+_agg.save_cache(cache_obj)
+loaded = _agg.load_cache()
+check("cache round-trip preserves payload",
+      loaded is not None and loaded.payload == fake_agg)
+check("cache round-trip preserves source_url",
+      loaded.source_url == "https://example/aggregates.json")
+
+# Corrupt cache → None
+(cache_dir / "aggregates_cache.json").write_text("{ not valid json")
+check("corrupt cache returns None", _agg.load_cache() is None)
+
+# Cohort summary string
+summary = _agg.cohort_summary(best)
+check("cohort_summary mentions gene", "KCNQ3" in summary)
+check("cohort_summary mentions n", "n=12" in summary)
+check("cohort_summary handles None gracefully",
+      _agg.cohort_summary(None) == "no matching cohort")
+
+
 # ─── Final ──────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
