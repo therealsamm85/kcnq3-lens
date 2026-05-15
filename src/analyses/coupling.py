@@ -17,6 +17,21 @@ developmental range, but formal cutoffs do not exist. This module therefore
 reports descriptive metrics ONLY — no "below / in / above" range
 classification is applied.
 
+Signal-length alignment note
+-----------------------------
+``iter_epochs`` yields only whole 30-second epochs (``n_epochs = int(duration_s)
+// 30``). The concatenated signal therefore contains
+``int(duration_s) // 30 * 30 * sfreq`` samples — which is shorter than
+``int(round(duration_s * sfreq))`` by up to ``(duration_s % 30) * sfreq``
+samples (up to ~7 500 samples at 250 Hz for a recording that ends mid-epoch).
+All spindle-peak sample indices are bounds-checked against the actual signal
+length; out-of-bounds spindles are silently skipped, never clipped, to avoid
+false phase aliasing.
+
+WARNING: ``notes`` field is local-only. Never extracted into registry
+submissions. The ``_DISCLAIMER`` text exceeds the 80-char PHI threshold and
+would be rejected by the scanner if it tried to land in a submission.
+
 References
 ----------
 Helfrich RF et al. 2018  PMID 29395264  SO-spindle coupling and memory in aging
@@ -246,9 +261,27 @@ def compute_so_spindle_coupling(
             n_so=len(slow_wave_events),
         )
     signal = np.concatenate(segments).astype(np.float64)
+    sfreq = rec.sfreq
+
+    # ── Signal-length alignment note ─────────────────────────────────────────
+    # iter_epochs yields only whole 30-s epochs; the tail (duration_s % 30 s)
+    # is dropped. Signal may be shorter than expected by up to ~7 500 samples
+    # at 250 Hz. We record the drift so callers are aware; out-of-bounds
+    # spindles will be silently skipped below (not clipped).
+    expected_n = int(round(rec.duration_s * sfreq))
+    actual_n = signal.shape[0]
+    drift = actual_n - expected_n
+    if abs(drift) > sfreq:  # >1 s of drift is flagged
+        notes.append(f"signal_length_drift_{drift}_samples")
 
     # ── NaN/Inf guard ─────────────────────────────────────────────────────────
     nan_frac = float(np.isnan(signal).sum()) / max(signal.size, 1)
+    if nan_frac > 0.20:
+        return _unavailable(
+            "high_nan_fraction", resolved_channel, notes,
+            n_spindles=len(spindle_events),
+            n_so=len(slow_wave_events),
+        )
     if nan_frac > 0.05:
         notes.append("high_nan_fraction")
     if not np.all(np.isfinite(signal)):
@@ -260,21 +293,9 @@ def compute_so_spindle_coupling(
         signal = signal * 1e6
         notes.append("auto_scaled_volts_to_uv")
 
-    sfreq = rec.sfreq
-
     # ── Bandpass 0.5–1.25 Hz → Hilbert → SO phase ────────────────────────────
-    so_filtered = _bandpass_so(signal, sfreq)
-    so_phase = np.angle(np.exp(1j * np.angle(
-        so_filtered + 1j * np.imag(
-            np.fft.irfft(
-                1j * np.sign(np.fft.rfftfreq(len(so_filtered)))
-                * np.fft.rfft(so_filtered),
-                n=len(so_filtered)
-            )
-        )
-    )))
-    # Use scipy's analytic signal for robustness
     from scipy.signal import hilbert as _hilbert
+    so_filtered = _bandpass_so(signal, sfreq)
     analytic = _hilbert(so_filtered)
     so_phase = np.angle(analytic)   # radians, -π..π
 
@@ -316,9 +337,12 @@ def compute_so_spindle_coupling(
             continue
         diffs = np.abs(so_neg_peaks - sp_t)
         if diffs.min() <= coupling_window_s:
-            # Get SO phase at the spindle peak time
+            # Get SO phase at the spindle peak time.
+            # Skip (not clip) out-of-bounds indices to avoid false phase aliasing
+            # caused by signal truncation at the tail of the recording.
             sample_idx = int(round(sp_t * sfreq))
-            sample_idx = max(0, min(sample_idx, len(so_phase) - 1))
+            if sample_idx < 0 or sample_idx >= len(so_phase):
+                continue
             phases_at_spindle.append(float(so_phase[sample_idx]))
 
     n_spindles_in_so = len(phases_at_spindle)
@@ -350,6 +374,10 @@ def compute_so_spindle_coupling(
 
     # ── Rayleigh test ─────────────────────────────────────────────────────────
     rayleigh_z_val, rayleigh_p = _rayleigh_test(phases)
+    # The approximation in _rayleigh_test is accurate for n >= 20.
+    # For 10 <= n < 20, p-values can be off by 10–30%; flag this.
+    if n_spindles_in_so < 20:
+        notes.append("rayleigh_approximation_n_lt_20")
 
     # Sanity check: if PLV came out non-finite, flag it
     if not math.isfinite(plv):
