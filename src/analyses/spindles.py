@@ -51,6 +51,15 @@ from scipy.signal import butter, sosfiltfilt, hilbert
 
 from ..readers.base import EEGRecording
 
+_DISCLAIMER = (
+    "Spindle density interpretation ('below'/'in'/'above') uses ±30% "
+    "ranges around the values reported by McClain 2016 (n=8 longitudinal, "
+    "ages 2-5) and Kwon 2023. These ranges are a TOOL CONVENTION for "
+    "longitudinal tracking, not a published clinical cutoff. The McClain "
+    "cohort is too small to support deterministic 'abnormal' calls. Use "
+    "the interpretation label for intra-patient comparison only."
+)
+
 
 @dataclass
 class SpindleResult:
@@ -347,4 +356,5 @@ def summarize_spindles(result: SpindleResult) -> dict:
         "median_peak_freq_hz": round(result.median_peak_freq_hz, 2),
         "age_normative_range": result.age_normative_range,
         "interpretation": result.interpretation,
+        "disclaimer": _DISCLAIMER,
     }

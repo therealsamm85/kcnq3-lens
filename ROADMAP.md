@@ -1,158 +1,96 @@
 # Roadmap
 
-What we've built (v0.1), what's next (v0.2), and what's possible later. Contributions on any of these are welcome — open an issue first if it's larger than a small fix.
+## Status — what has shipped
 
----
+### v0.1–v0.7 (foundation + clinical depth)
 
-## v0.1 (shipped)
-
-- Nihon Kohden EEG-1200A binary reader (novel)
-- EDF / EDF+ / BDF / BrainVision / EEGLAB readers (via MNE)
-- Five quantitative analyses:
-  - Per-channel kurtosis topography
-  - Sleep spindle density (Cz, age-normative)
-  - Background power + posterior dominant rhythm
-  - Sustained rhythmic burst detection
-  - Spike-wave morphology classification
+- Nihon Kohden EEG-1200A binary reader (novel open-source implementation)
+- Five core analyses: spike topography, sleep spindle density, background power + PDR, sustained burst detection, spike morphology
 - Streamlit UI with file upload, per-analysis tabs, JSON export
-- Multi-AI optional interpretation (Anthropic Claude, OpenAI GPT, Google Gemini)
-- Privacy-first architecture: all processing local, only derived metrics sent to LLM
-- MIT license, medical disclaimer
+- Multi-AI interpretation (Claude, GPT, Gemini — user's own key)
+- Pre/post-treatment comparison mode
+- German UI translation
+- Topographic scalp maps, time-of-night spike burden chart
+- Auto sleep-onset detection, recording quality control (A–D grade)
+- Proactive clinical insights: anatomical mapping, pattern recognition, cross-modal observations
+- SWI (Spike-Wave Index), wake/sleep state split, bilateral synchrony analysis
+- YASA integration as default spindle backend (replaced heuristic over-counter)
+- Sleep stage classification (YASA + delta/alpha heuristic fallback)
+- Doctor and parent PDF reports (ReportLab)
+- Bootstrap confidence intervals, ACNS/ILAE terminology
+- Clinical citations module, negative findings panel
+- Anonymization helper for EDF/NK headers
+- v0.11.1: corrected Wamsley citation error — pediatric spindle norms updated to McClain 2016 + Kwon 2023 (previous values were ~3× too high)
+
+### v0.12.0–v0.12.4 (federated registry)
+
+- SQLite local storage for longitudinal tracking
+- Registry schema v1 + de-identification submission builder (allowlist-by-construction, PHI regex sweep)
+- PHI scanner fix + registry repo cross-link
+- Contribute mode: pre-filled GitHub PR flow, no backend required
+- Aggregates download + peer-comparison UI (k-anonymized cohort percentiles)
+
+### v0.13.0–v0.13.3 (Tier 2 analyses)
+
+- v0.13.0: Slow-wave detection (SO density, amplitude, duration — NREM3 marker)
+- v0.13.1: HFO ripple detection (Staba-style energy detector, 80–250 Hz)
+- v0.13.2: SO-spindle coupling (PLV-based coupling angle and strength) + registry schema v2 (HFO rate, coupling buckets, IED method fields)
+- v0.13.3: Automated IED detection — ensemble heuristic (morphology + template + amplitude); opt-in SpikeNet wrapper (stub — requires local model weights)
 
 ---
 
-## v0.2 — next priorities
+## Tier 3 — NEXT (open, not started)
 
-These are the features most likely to be high-impact for real families using the tool.
+These are the most impactful next contributions. Open an issue before starting anything larger than a small fix.
 
-### Pre/post-treatment comparison ⭐
+### Clinical validation study
 
-Upload two EEG recordings and see what changed between them. This is the single most valuable feature for any family tracking medication response — exactly the workflow we used to compare pre-Sultiam vs post-Sultiam in the reference patient's case.
+Work with a pediatric neurologist to compare tool outputs against expert-scored polysomnograms and clinical EEG reads on ≥10 recordings. Without this, all interpretation labels remain "tool convention" only. This is the highest-leverage thing anyone can do to improve the tool's real-world utility.
 
-- Side-by-side topography
-- Spindle density change with significance test
-- PDR shift
-- Burst count delta
-- Morphology distribution change
-- LLM-generated "what changed and what likely matters" summary
+### BIDS-EEG export
 
-### PDF report generation ⭐
+Export findings and (optionally) the anonymized recording as a [BIDS-EEG](https://bids-specification.readthedocs.io/en/stable/modality-specific-files/electroencephalography.html) dataset. Would allow families to share data in a format research labs can directly ingest, without custom parsing.
 
-A clean, professional report with plots, tables, and the AI interpretation that families can email to their doctor. Doctor-friendly version (technical detail) and parent-friendly version (plain language).
+### Pediatric YASA tuning
 
-Use ReportLab or WeasyPrint; templates per audience.
+YASA's SleepStaging model is trained on adult polysomnography. A pediatric-specific model (or a correction layer) would substantially improve sleep-stage accuracy for the 2–12-year-old range that most KCNQ3 families fall into. Likely requires a labeled pediatric polysomnography dataset (CHB-MIT is not staged; DREAMS or SEDF may be useful starting points).
 
-### German UI translation
+### UI integration of Tier-2 findings
 
-The first families likely to find this tool are German-speaking (Hamburg, Berlin, Munich pediatric neurology). A `README.de.md` plus a `i18n/` system in the app would lower the barrier. Volunteer translators welcome for other languages too.
+Slow waves, HFO ripples, coupling, and IED are computed but only exposed as JSON output and in the doctor PDF. A dedicated UI tab (or extension of the existing Clinical tab) showing these findings interactively — with interpretation caveats in-line — would make them accessible to families.
 
-### Time-of-night spike burden plot
+### Additional clinical patterns
 
-The 30-min-bin chart we built to find the reference patient's first-NREM-cycle activation peak. Useful for: identifying when in the night spikes cluster, comparing across nights, showing the doctor the "shape" of the night.
-
-### Auto-detect sleep onset / sleep window
-
-Instead of manually entering sleep start/end seconds, use delta-band power, EMG (if a marker channel exists), and movement detection to estimate sleep onset within ~10 minutes. Reduces user error significantly.
+Childhood Absence Epilepsy, Lennox-Gastaut, Doose syndrome pattern recognizers in `src/insights/patterns.py`. Requires clinical review of criteria before merging.
 
 ---
 
-## v0.3 — additional analyses
+## What we deliberately will not build
 
-### High-frequency oscillation (HFO) detection
-
-For recordings sampled at ≥500 Hz: detect ripples (80–250 Hz). HFO density is one of the best modern biomarkers for cognitive outcome in epilepsy. Limited applicability since most clinical EEGs are sampled at 200–250 Hz, but worth having for the families with research-grade recordings.
-
-### Sleep stage estimation
-
-A proper rule-based or model-based stager (N1/N2/N3/REM) per 30-second epoch. Lets stage-specific analyses (N2-only spindle density, N3-only SWI, REM-only morphology) be done correctly.
-
-### Spike-Wave Index (SWI) — proper CSWS metric
-
-Compute the formal SWI used in CSWS/ESES diagnosis: percentage of slow-wave sleep occupied by continuous spike-wave activity. Per stage, per cycle.
-
-### Topographic scalp plots
-
-Use MNE's `plot_topomap` to render brain-shaped scalp maps for kurtosis, spindle density, burst origin — much more intuitive than bar charts.
-
-### Inter-hemispheric asymmetry
-
-Left vs right comparison for all metrics. Important for catching focal patterns the standard reading might miss.
-
-### Vertex sharp wave / K-complex detection
-
-Additional sleep-architecture markers beyond spindles. Reduced vertex waves correlate with neurodevelopmental disorders.
-
----
-
-## v0.4 — community & longitudinal
-
-### Longitudinal tracking
-
-Store findings to a local JSON file across recordings. Plot trends over months / years. The same child's spindle density, PDR, burst count plotted over time — answers the "is treatment working" question with quantitative evidence.
-
-### Opt-in anonymous aggregate dataset
-
-For families willing to share, contribute anonymized derived metrics (NOT raw EEG, NOT identifiers) to a community dataset. Over time this becomes a research resource that could meaningfully expand the KCNQ3 literature.
-
-### Variant-specific comparison
-
-If your child has KCNQ3 R230H and the community dataset has 30 other R230H recordings, show your child's metrics relative to that cohort. Same for KCNT1, SCN1A, STXBP1, GRIN2A, etc.
-
-### Literature reference panel
-
-For each variant entered, pull the most relevant recent papers from PubMed and link them in the report. Saves families from having to manually search for "KCNQ3 p.Arg230His" every visit.
-
----
-
-## v0.5 — production polish
-
-### Standalone installers
-
-PyInstaller / py2app / py2exe builds so non-technical parents can double-click to install rather than learn `pip`.
-
-### Anonymization helper
-
-A one-click button to strip patient identifiers from EEG files before sharing (e.g. with a second-opinion doctor abroad). Important because hospital EEG exports often contain patient name, birth date, MRN in the header.
-
-### Recording quality assessment
-
-Flag bad channels, high-noise epochs, electrode drift. Some EEGs are simply too poor-quality to analyze meaningfully and the tool should say so honestly rather than producing misleading numbers.
-
-### Export to MNE-Raw format
-
-For clinicians who want to do their own analysis in MNE-Python or other tools, expose a "Save as EDF" or "Save as MNE Raw" option.
-
-### Migrate Gemini provider to google-genai
-
-The current `google-generativeai` SDK is deprecated. Switch to `google-genai` (different package, similar API).
-
----
-
-## What we deliberately won't build (at least not initially)
-
-- **Cloud hosting / shared accounts.** Medical data privacy is too easy to get wrong. Local-only is a feature, not a limitation.
-- **Diagnostic claims.** This will never be a "the reference patient has CSWS / R230H disorder" output. It surfaces patterns; doctors interpret.
-- **Treatment recommendations.** Not from the rule-based code, not from the AI layer. Hard rule.
-- **Automatic medication adjustment guidance.** Same as above.
-- **Patient data storage outside the user's device.** Even with opt-in, individual data stays local; only fully anonymized aggregate metrics may eventually be shared.
+- **FDA / CE certification.** This is a research and family-support tool, not a regulated medical device, and it will stay that way until a formal clinical-validation pathway is funded and staffed.
+- **Real-time / streaming EEG.** Architecture is built for offline overnight recordings. Live EEG requires a fundamentally different stack.
+- **Mobile app.** EEG files are large, processing is CPU-intensive, and the user base is small. A native mobile app would cost more than it would help.
+- **Cloud hosting / shared accounts.** Local-only is a feature, not a gap. Medical data privacy is too easy to get wrong at scale.
+- **Diagnostic claims.** The tool surfaces patterns; clinicians interpret. Hard rule — no output will ever say "this child has [condition]".
+- **Treatment recommendations.** Same as above.
 
 ---
 
 ## How to contribute
 
-1. Open an issue describing what you want to build or improve.
-2. For larger changes (a new analysis, a new file format, a UX rework), let's discuss before you spend a weekend on it.
-3. PRs welcome. Keep the medical-safety guardrails — anything that suggests diagnosis or treatment will not be merged.
-4. Test against at least one real EEG before submitting (synthetic data is fine for unit tests but doesn't catch the messy real-world cases).
+1. Open an issue describing what you want to build.
+2. For anything larger than a small fix — discuss before spending a weekend on it.
+3. PRs must maintain the medical-safety guardrails. Anything that implies diagnosis or treatment will not be merged.
+4. Test against at least one real EEG before submitting (synthetic data is fine for unit tests, but doesn't catch real-world edge cases).
 
 ---
 
-## Names to reach out to (parents and researchers, when this is ready)
+## Contacts (for when the tool is ready to reach more families)
 
-- **RIKEE** (rikee.org) — the existing KCNQ patient registry. Worth letting them link to the tool.
-- **Prof. Sarah Weckhuysen** (Antwerpen) — KCNQ research lead in Europe.
-- **Prof. Ed Cooper** (Baylor) — KCNQ research lead in the US.
-- **N=1 Collaborative** (Boston) — n-of-1 ASO research for rare epilepsies.
-- **CureKCNQ Family Foundation** — patient advocacy.
-- **EpiCARE** — European Reference Network for Rare and Complex Epilepsies.
-- KCNQ3 Facebook groups (a few exist, ~100–300 members each).
+- **RIKEE** (rikee.org) — existing KCNQ patient registry; worth linking to the tool
+- **Prof. Sarah Weckhuysen** (Antwerpen) — KCNQ research lead in Europe
+- **Prof. Ed Cooper** (Baylor) — KCNQ research lead in the US
+- **N=1 Collaborative** (Boston) — n-of-1 ASO research for rare epilepsies
+- **CureKCNQ Family Foundation** — patient advocacy
+- **EpiCARE** — European Reference Network for Rare and Complex Epilepsies
+- KCNQ3 Facebook groups (~100–300 members each)

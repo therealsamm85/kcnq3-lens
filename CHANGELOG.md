@@ -6,6 +6,95 @@ This project is in early development. The 0.x line is for the rare-epilepsy comm
 
 ---
 
+## [0.13.3] — 2026-05-15
+
+### Added — automated IED detection (Tier 2)
+
+- `src/analyses/ied_ml.py`: ensemble heuristic (morphology score + template correlation + amplitude threshold). Opt-in SpikeNet wrapper present as a stub — requires locally downloaded model weights, not distributed with the tool.
+- Schema v2 fields for IED method flag (`ied_method_bucket`) integrated into registry submission builder.
+- Named constants `HFO_PCT_ON_SPIKE_BUCKETS` + `SW_METHODS` in registry for round-trip stability.
+
+**Note:** The IED detector is rule-based, not ML. The "SpikeNet" path is a stub pending a separately trained model. False positive / false negative rates are unknown — treat output as a screening flag only.
+
+---
+
+## [0.13.2] — 2026-05-15
+
+### Added — SO-spindle coupling + registry schema v2
+
+- `src/analyses/coupling.py`: PLV-based SO-spindle coupling (coupling angle and strength per night). Descriptive — no pediatric normative ranges currently incorporated.
+- Registry schema v2: adds `hfo_rate_bucket`, `coupling_strength_bucket`, `coupling_angle_bucket`, `sw_density_bucket` fields. Schema version bumped; existing v1 submissions remain valid.
+
+---
+
+## [0.13.1] — 2026-05-15
+
+### Added — HFO ripple detection
+
+- `src/analyses/hfo_ripples.py`: Staba-style energy detector for 80–250 Hz ripples. Requires ≥500 Hz sampling rate — most clinical EEGs (200–250 Hz) will return zero detections by design.
+- Outputs: HFO rate per minute, per-channel density, co-occurrence with IEDs.
+
+**Note:** HFO detection is a research field with no consensus algorithm or validated pediatric norms. Output is a research metric, not a clinical measurement.
+
+---
+
+## [0.13.0] — 2026-05-15
+
+### Added — slow-wave detection (first Tier 2 component)
+
+- `src/analyses/slow_waves.py`: slow-oscillation (SO) density, mean amplitude, and duration in NREM3 epochs. Amplitude-and-duration heuristic; no pediatric normative database for comparison.
+- Tier 1 e2e integration test (`tests/test_tier1_e2e.py`) covering the live pipeline across both repos.
+
+---
+
+## [0.12.0–0.12.4] — 2026-05-15
+
+### Added — federated registry pipeline
+
+- v0.12.0: SQLite local storage for longitudinal tracking of EEG metrics across recordings.
+- v0.12.1: Registry schema v1 + de-identification submission builder. Allowlist-by-construction architecture — fields not in the schema cannot appear in output. PHI regex sweep.
+- v0.12.2: PHI scanner fix + registry repo cross-link (`therealsamm85/kcnq3-registry`).
+- v0.12.3: Contribute mode — pre-filled GitHub PR flow with one-JSON-line submission. No backend; audit trail via git history.
+- v0.12.4: Aggregates download + peer-comparison UI. k-anonymized cohort percentiles displayed in-app. Closes the full registry loop.
+
+---
+
+## [0.11.0–0.11.1] — 2026-05-15
+
+### Added
+
+- Mac + Windows + Linux standalone installers (PyInstaller). No Python needed — double-click to run.
+- Public sample EEG data (CHB-MIT, PhysioNet) bundled for first-time users.
+
+### Fixed — v0.11.1
+
+- **Corrected four hallucinated citations and values.** Most critically: spindle norm reference was Wamsley 2012, which is an adult schizophrenia paper containing no pediatric norms. Replaced with McClain 2016 (n=8, ages 2–5) and Kwon 2023 (n=567, ages 0–18). Revised norms are roughly 3× lower at age 5 than previously claimed. Interpretation labels for all pre-v0.11.1 recordings were therefore overly optimistic ("in range" when density was actually "below").
+
+---
+
+## [0.9.0–0.10.1] — 2026-05-14
+
+### Added
+
+- v0.9: Quick Start mode — parent-friendly 4-step guided UI.
+- v0.9.1: Fix Streamlit widget-key/session-state conflict.
+- v0.9.2: Streamlit AppTest runtime tests.
+- v0.10: Live EEG-trace viewer with event overlays.
+- v0.10.1: Copy-paste AI prompt for families without API keys.
+
+---
+
+## [0.8.0–0.8.2] — 2026-05-14
+
+### Added
+
+- **Longitudinal tracker**: store findings to SQLite across recordings; plot metric trends over time. Answers "is treatment working?" with a graph.
+- CI integration for the test suite.
+- v0.8.1: Corrupt-input handling and degenerate edge-case hardening.
+- v0.8.2: Fix YASA SleepStaging integration + cycle counter.
+
+---
+
 ## [0.7.0] — 2026-05-14
 
 ### Added — clinical credibility
@@ -211,12 +300,6 @@ Both fixes verified with the end-to-end smoke test; full pipeline still passes.
 
 ---
 
-## Looking ahead
+## What's next
 
-Planned for 0.5.x:
-
-- Longitudinal tracking across multiple recordings of the same child, including a symptom / developmental-milestone diary tied to the EEG timeline.
-- Insights embedded directly in the PDF reports.
-- Additional clinical patterns (Childhood Absence Epilepsy, Lennox-Gastaut, Doose).
-- A research-grade CLI for batch processing with config hashes for reproducibility.
-- Migration from the deprecated `google-generativeai` to `google-genai`.
+See [ROADMAP.md](ROADMAP.md) for Tier 3 candidates and open contributions.

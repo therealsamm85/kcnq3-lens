@@ -19,7 +19,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 
 
-CURRENT_CONSENT_VERSION = 1
+CURRENT_CONSENT_VERSION = 2
 
 
 @dataclass(frozen=True)

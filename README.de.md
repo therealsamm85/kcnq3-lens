@@ -14,15 +14,30 @@ Dieses Werkzeug berechnet diese Dinge und bereitet sie so auf, dass Sie sie mit 
 
 ## Was es tut
 
-Fünf quantitative Analysen pro EEG-Aufnahme:
+Elf quantitative Analysen pro EEG-Aufnahme, in zwei Tiers:
+
+**Tier 1 — Kernanalysen (ab v0.1–v0.7)**
 
 | Analyse | Was gemessen wird |
 |---|---|
-| **Topographie** | Per-Kanal-Kurtosis — zeigt, wo epileptiforme Aktivität konzentriert ist |
-| **Schlafspindeln** | Dichte pro Minute auf Cz (oder anderen zentralen Kanälen), inklusive altersangemessenem Vergleich |
-| **Hintergrund-Leistung** | Posteriore Grundaktivität, Delta/Alpha-Quotient, Bandverteilung |
+| **Spike-Topographie** | Per-Kanal-Kurtosis — zeigt, wo epileptiforme Aktivität konzentriert ist |
+| **Schlafspindel-Dichte** | Dichte pro Minute auf Cz (oder anderen zentralen Kanälen), altersangemessener Vergleich (YASA-Standard) |
+| **Hintergrund-Leistung + PDR** | Posteriore Grundaktivität, Delta/Alpha-Quotient, Bandverteilung |
 | **Anhaltende Bursts** | Erkennt rhythmische Bursts ≥3s, die subklinische elektrographische Ereignisse darstellen können |
 | **Spike-Morphologie** | Klassifikation: einfacher Spike vs. Sharp Wave vs. komplexe Spike-Wave |
+| **Schlafstadien** | NREM/REM/Wach-Klassifikation per 30s-Epoche via YASA + heuristischem Fallback |
+| **Spike-Wave-Index (SWI)** | % der NREM-Zeit mit kontinuierlicher SW-Aktivität — formales CSWS/ESES-Kriterium |
+| **Wach-/Schlaf-Aufschlüsselung** | Separate Spike-Raten pro Zustand + Aktivierungsfaktor |
+| **Bilaterale Synchronie** | Fokal / regional / bilateral synchron / generalisiert pro Spike |
+
+**Tier 2 — Forschungsanalysen (ab v0.13.x)**
+
+| Analyse | Was gemessen wird | Hinweis |
+|---|---|---|
+| **Slow-Wave-Detektion** | SO-Dichte, Amplitude, Dauer in NREM3 | Deskriptiv — keine pädiatrischen Normwerte |
+| **HFO-Ripple-Detektion** | 80–250-Hz-Energiebursts (Staba-Methode) | Forschungsmetrik — erfordert ≥500 Hz Abtastrate |
+| **SO-Spindel-Kopplung** | PLV-basierter Kopplungswinkel und -stärke | Reift durch die Adoleszenz — noch keine Altersnormwerte |
+| **IED-Detektion** | Ensemble-Heuristik + optionaler SpikeNet-Stub | Regelbasiert, kein ML; SpikeNet erfordert lokale Modellgewichte |
 
 Jede Analyse liefert numerische Befunde, Grafiken und (optional) eine verständliche Interpretation, generiert vom KI-Anbieter Ihrer Wahl mit Ihrem eigenen API-Schlüssel.
 
@@ -158,7 +173,7 @@ KCNQ3-Lens ersetzt keine bestehenden Tools — es schließt eine spezifische Lü
 | Tool | Stärken | Wann es stattdessen sinnvoll ist | Wie wir ergänzen |
 |---|---|---|---|
 | **[MNE-Python](https://mne.tools)** | Wissenschaftliche EEG-Bibliothek für Python — Preprocessing, ICA, Quellrekonstruktion, voller Forschungsstack | Eigene Forschungsanalysen, Source-Modeling, fortgeschrittene Statistik | Wir nutzen MNE intern für Nicht-NK-Formate und Standard-Signalverarbeitung |
-| **[YASA](https://github.com/raphaelvallat/yasa)** | Validiertes ML-basiertes Sleep-Staging und Spindel-Detektion | Polysomnographie-Forschung, validierte Schlaf-Analyse | Geplante Integration in v0.3 — unsere heuristische Spindel-Detektion fällt auf YASA zurück, wenn installiert |
+| **[YASA](https://github.com/raphaelvallat/yasa)** | Validiertes ML-basiertes Sleep-Staging und Spindel-Detektion | Polysomnographie-Forschung, validierte Schlaf-Analyse | Integriert seit v0.3 — YASA ist der Standard-Spindel-Backend; Heuristik ist der Fallback |
 | **[EDFbrowser](https://www.teuniz.net/edfbrowser/)** | Freier, schneller EDF/BDF-Wellenform-Viewer | Visuelles Durchscrollen der Rohwellenform, manuelle Marker | EDFbrowser für visuelle Sichtung, KCNQ3-Lens für quantitative Zusammenfassung |
 | **[Persyst](https://www.persyst.com/)** | Klinische EEG-Software (kommerziell) — Spike-Detektion, Sleep-Staging, qEEG-Berichte | Klinik-Workflows mit Persyst-Lizenz | Wir sind die Open-Source-, familientaugliche Alternative — kein Ersatz für klinische Infrastruktur |
 | **[Brainstorm](https://neuroimage.usc.edu/brainstorm/)** / **EEGLAB** / **FieldTrip** | MATLAB-Neuroimaging-Suiten mit fortgeschrittenem Source-Modeling | Forschungslabore mit MATLAB-Lizenz | Andere Zielgruppe; wir konkurrieren nicht in Quellenrekonstruktion |
@@ -186,7 +201,7 @@ KCNQ3-Lens ersetzt keine bestehenden Tools — es schließt eine spezifische Lü
 
 **Grenzen:**
 - Ersetzt nicht die räumlich-zeitliche Mustererkennung einer erfahrenen Epileptologin
-- Schlafstadien werden aktuell zeitfenster-basiert geschätzt (geplante YASA-Integration in v0.3 bringt validierte Stadienklassifikation)
+- Schlafstadien werden via YASA klassifiziert (erwachsenentrainiertes Modell — pädiatrische Genauigkeit ist geringer)
 - Der Nihon-Kohden-EEG-1200A-Reader wurde anhand einer einzelnen Aufnahme-Familie reverse-engineered — andere Aufnahmen in diesem Format ggf. zu verifizieren
 - Altersnormwerte stammen aus der Literatur und repräsentieren nicht jedes Kind perfekt
 - Erkennungs-Schwellenwerte sind konservativ; einzelne Ereignisse können übersehen oder überzählig erfasst werden
@@ -198,7 +213,7 @@ KCNQ3-Lens ersetzt keine bestehenden Tools — es schließt eine spezifische Lü
 KCNQ3-Lens hängt von exzellenter Vorarbeit ab. Wenn dieses Tool für dich nützlich ist, bitte auch die zugrundeliegenden Projekte würdigen:
 
 - **[MNE-Python](https://mne.tools)** — das wissenschaftliche Fundament für EEG-Analyse in Python.
-- **[YASA](https://github.com/raphaelvallat/yasa)** — validiertes Sleep-Staging und Spindel-Detektion (Integration in v0.3 geplant).
+- **[YASA](https://github.com/raphaelvallat/yasa)** — validiertes Sleep-Staging und Spindel-Detektion (integriert seit v0.3).
 - **[SciPy](https://scipy.org)** / **[NumPy](https://numpy.org)** — Signalverarbeitung und numerische Berechnung.
 - **[Streamlit](https://streamlit.io)** — Frontend-Framework, das ein lokales browser-basiertes GUI praktikabel macht.
 - **[Anthropic](https://www.anthropic.com/)**, **[OpenAI](https://openai.com/)**, **[Google](https://ai.google.dev/)** — die LLM-Anbieter für die optionale KI-Interpretation.
@@ -209,11 +224,12 @@ KCNQ3-Lens hängt von exzellenter Vorarbeit ab. Wenn dieses Tool für dich nütz
 
 Beiträge willkommen, insbesondere:
 
+- **Klinische Validierungsstudie** — Tool-Ausgaben gegen expertenbewertete EEGs vergleichen (≥10 Aufnahmen — der wirkungsvollste nächste Schritt)
+- **Pädiatrisches YASA-Tuning** — YASAs Modell ist erwachsenentrainiert; eine pädiatrische Korrektur würde die Schlafstadien-Genauigkeit erheblich verbessern
+- **UI-Integration der Tier-2-Befunde** — Slow Waves, HFOs, Kopplung und IED werden berechnet, sind aber nur in JSON/PDF verfügbar
 - Validierung gegen andere EEG-Formate und Aufnahmesysteme
 - Weitere Nihon-Kohden-Datei-Varianten (andere Abtastraten, Kanal-Layouts)
-- Bessere Schlafstadien-Bestimmung (regelbasiert oder modell-basiert)
 - Übersetzungen der UI in weitere Sprachen
-- Zusätzliche Analysen (HFOs, Quellen-Lokalisation, Cross-Frequency-Coupling)
 
 Bei Beiträgen, die klinische Interpretation betreffen: bitte zuerst ein Issue öffnen, damit Sicherheitsaspekte besprochen werden können.
 
