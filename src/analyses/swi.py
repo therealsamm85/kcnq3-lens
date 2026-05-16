@@ -21,7 +21,7 @@ with sustained spike-wave runs covering most of NREM has ≥85% SWI.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.signal import butter, sosfiltfilt, find_peaks
@@ -36,11 +36,12 @@ class SWIResult:
     swi_per_stage: dict[str, float]      # 'N1' / 'N2' / 'N3' / 'REM' / 'W' → % SWI
     swi_nrem_combined: float              # weighted across N1+N2+N3
     swi_n3_only: float                    # the most clinically relevant
-    csws_criterion_met: bool              # True if N3 SWI ≥ 85%
+    csws_criterion_met: bool | None       # True if N3 SWI ≥ 85%; None if not evaluable
     csws_threshold_pct: float
     minutes_analyzed_per_stage: dict[str, float]
     n_epochs_with_continuous_sw: int
     epoch_seconds: float
+    notes: list[str] = field(default_factory=list)
 
 
 def compute_swi(
@@ -65,6 +66,8 @@ def compute_swi(
     detection_bandpass : (low, high)
         Same band used by the v0.3 morphology detector.
     mad_multiplier : float
+        Threshold = mad_multiplier × MAD where MAD = median(|x − median(x)|).
+        Default 6.0 ≈ 4σ for Gaussian noise (NOT 6σ; MAD ≈ 0.6745σ).
         Same threshold scheme as morphology.py.
     min_sw_burst_s : float
         Minimum sustained-burst duration to count toward SWI.
@@ -109,6 +112,9 @@ def compute_swi(
         centered = filtered - np.median(filtered)
         local_mad = np.median(np.abs(centered))
         local_rms = float(np.sqrt(np.mean(filtered ** 2)))
+        # mad_multiplier=6.0 means threshold = 6 × MAD where MAD = median(|x−med|).
+        # For Gaussian data: MAD ≈ 0.6745σ, so 6×MAD ≈ 4σ (NOT 6σ).
+        # If you want N σ-units, use mad_multiplier ≈ N / 0.6745.
         threshold = max(mad_multiplier * local_mad, 3.0 * local_rms)
         if threshold <= 0 or not np.isfinite(threshold):
             continue
@@ -149,18 +155,29 @@ def compute_swi(
                  + stage_sw_seconds["N3"])
     swi_nrem = 100 * nrem_sw_s / nrem_total_s if nrem_total_s > 0 else 0.0
     swi_n3 = swi_per_stage["N3"]
-    csws_met = swi_n3 >= csws_threshold_pct
+
+    # D3: When using fallback staging (method="fallback_delta_alpha"), all NREM
+    # epochs are classified as N2 — N3 is structurally empty. The CSWS criterion
+    # (N3 SWI ≥ 85%) can never be evaluated, so we set None instead of False
+    # to avoid a misleading "criterion not met" when the real answer is "unknown".
+    swi_notes: list[str] = []
+    if getattr(sleep_stages, "method", "") == "fallback_delta_alpha":
+        csws_met: bool | None = None
+        swi_notes.append("csws_not_evaluable_with_fallback_staging")
+    else:
+        csws_met = swi_n3 >= csws_threshold_pct
 
     return SWIResult(
         channel=target_channel,
         swi_per_stage={k: float(v) for k, v in swi_per_stage.items()},
         swi_nrem_combined=float(swi_nrem),
         swi_n3_only=float(swi_n3),
-        csws_criterion_met=bool(csws_met),
+        csws_criterion_met=csws_met,
         csws_threshold_pct=csws_threshold_pct,
         minutes_analyzed_per_stage=minutes_per_stage,
         n_epochs_with_continuous_sw=epochs_with_continuous_sw,
         epoch_seconds=epoch_seconds,
+        notes=swi_notes,
     )
 
 
@@ -211,4 +228,5 @@ def summarize_swi(result: SWIResult) -> dict:
             k: round(v, 1) for k, v in result.minutes_analyzed_per_stage.items()
         },
         "n_epochs_with_continuous_sw": result.n_epochs_with_continuous_sw,
+        "notes": result.notes,
     }

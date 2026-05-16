@@ -130,7 +130,10 @@ def _rayleigh_test(phases: np.ndarray) -> tuple[float, float]:
 
     Returns (z_statistic, p_value).
 
-    Approximation from Fisher 1993 / Zar 1999 (accurate for n >= 10).
+    Approximation from Mardia/Zar Eq. 27.4 and Fisher 1993.
+    Accurate for n >= 50. For 20 <= n < 50 error is typically < 10%.
+    For 10 <= n < 20 error can reach 10-30%; callers should check whether
+    the rayleigh_approximation_n_lt_20 note was appended.
     """
     n = len(phases)
     if n < 2:
@@ -138,7 +141,10 @@ def _rayleigh_test(phases: np.ndarray) -> tuple[float, float]:
     z_vec = np.exp(1j * phases)
     R = float(abs(np.sum(z_vec)))
     rayleigh_z = R ** 2 / n
-    # Approximation valid for n >= 10:
+    # Rayleigh test approximation (Mardia/Zar Eq. 27.4, Fisher 1993).
+    # Accurate for n >= 50. For 20 <= n < 50: approximation error typically
+    # < 10%. For 10 <= n < 20: error can reach 10-30%; we emit a note
+    # (rayleigh_approximation_n_lt_20) for these cases.
     p = np.exp(-rayleigh_z) * (
         1
         + (2 * rayleigh_z - rayleigh_z ** 2) / (4 * n)
@@ -374,8 +380,8 @@ def compute_so_spindle_coupling(
 
     # ── Rayleigh test ─────────────────────────────────────────────────────────
     rayleigh_z_val, rayleigh_p = _rayleigh_test(phases)
-    # The approximation in _rayleigh_test is accurate for n >= 20.
-    # For 10 <= n < 20, p-values can be off by 10–30%; flag this.
+    # The approximation is accurate for n >= 50; for 20 <= n < 50 error < 10%;
+    # for 10 <= n < 20, error can reach 10-30% — flag explicitly.
     if n_spindles_in_so < 20:
         notes.append("rayleigh_approximation_n_lt_20")
 

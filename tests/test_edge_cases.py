@@ -296,8 +296,10 @@ try:
     swi = compute_swi(rec, fake_ss)
     check("SWI on all-wake recording returns 0 SWI for NREM stages",
           swi.swi_nrem_combined == 0.0)
-    check("SWI csws_criterion_met is False when N3 is empty",
-          swi.csws_criterion_met == False)
+    # D3 fix: when method=fallback_delta_alpha, csws_criterion_met = None
+    # (not False) because N3 is structurally empty — criterion is not evaluable.
+    check("SWI csws_criterion_met is None when fallback staging (not evaluable)",
+          swi.csws_criterion_met is None)
 except Exception as e:
     check("compute_swi doesn't crash on all-wake input", False, str(e))
 
@@ -310,8 +312,10 @@ try:
         channel_used="Cz", method="fallback_delta_alpha",
     )
     sp = compute_state_split(rec, fake_ss2)
-    check("State split handles zero-wake without div-by-zero",
-          sp.activation_factor >= 0)
+    # D5 fix: when wake_rate < 0.1, activation_factor is now None (indeterminate),
+    # not a float. The check is that it doesn't crash and label is indeterminate.
+    check("State split handles zero-wake without crash",
+          sp.activation_label == "indeterminate" and sp.activation_factor is None)
 except Exception as e:
     check("State split handles zero-wake", False, str(e))
 
@@ -2420,6 +2424,208 @@ finally:
     _sh_c10.rmtree(_c10_dir_nodiary, ignore_errors=True)
     _db_c10.reset_init_cache_for_tests()
     _os_c10.environ.pop("KCNQ3_LENS_DATA", None)
+
+
+# ─── D-track: Science correctness patches (D1-D6) ────────────────────────────
+section("D1 — Delta band: background.py uses 0.5 Hz lower bound")
+try:
+    import inspect as _d1_inspect
+    from src.analyses.background import compute_background_power as _bg_fn
+    _bg_src = _d1_inspect.getsource(_bg_fn)
+    check("D1: background.py delta lower bound is 0.5 Hz",
+          "0.5" in _bg_src and "f < 4" in _bg_src,
+          "delta band may not start at 0.5 Hz")
+    check("D1: background.py delta band does NOT start at 1 Hz (old bound)",
+          "f >= 1) & (f < 4)" not in _bg_src,
+          "old [1,4) bound still present")
+except Exception as e:
+    check("D1: delta band inspection", False, str(e))
+
+section("D2 — MAD multiplier 6.0 means ~4sigma for Gaussian noise")
+try:
+    _rng_d2 = np.random.default_rng(42)
+    _gauss_d2 = _rng_d2.standard_normal(100_000)
+    _med_d2 = float(np.median(_gauss_d2))
+    _mad_d2 = float(np.median(np.abs(_gauss_d2 - _med_d2)))
+    _thr_6mad = 6.0 * _mad_d2
+    _n_outliers = int(np.sum(np.abs(_gauss_d2) > _thr_6mad))
+    # At 4σ two-tailed: ~6.3 per 100k. At 6σ: ~0 per 100k.
+    check("D2: 6×MAD threshold on Gaussian std=1 catches some outliers (n>0, ie ~4sigma not 6sigma)",
+          _n_outliers > 0,
+          f"got {_n_outliers} — should be ~6 per 100k at 4σ")
+    check("D2: outlier count in 4sigma range 1-100 (not 0 as true 6sigma would give)",
+          1 <= _n_outliers <= 100,
+          f"got {_n_outliers}")
+    check("D2: 6×MAD numerically close to 4sigma (ratio to true 1sigma)",
+          abs(_thr_6mad / 1.0 - 4.0) < 0.5,
+          f"6×MAD={_thr_6mad:.3f}, expected ~{6*0.6745:.3f}")
+except Exception as e:
+    check("D2: MAD convention numeric test", False, str(e))
+
+try:
+    import inspect as _d2_inspect
+    from src.analyses import morphology as _morph_mod2
+    from src.analyses import swi as _swi_mod2
+    from src.analyses import state_split as _ss_mod2
+    _morph_src2 = _d2_inspect.getsource(_morph_mod2)
+    _swi_src2 = _d2_inspect.getsource(_swi_mod2)
+    _ss_src2 = _d2_inspect.getsource(_ss_mod2)
+    check("D2: MAD comment in morphology.py mentions 6xMAD~4sigma",
+          "6" in _morph_src2 and "MAD" in _morph_src2 and ("sigma" in _morph_src2.lower() or "σ" in _morph_src2))
+    check("D2: MAD comment in swi.py mentions 6xMAD~4sigma",
+          "6" in _swi_src2 and "MAD" in _swi_src2 and ("sigma" in _swi_src2.lower() or "σ" in _swi_src2))
+    check("D2: MAD comment in state_split.py mentions 6xMAD~4sigma",
+          "6" in _ss_src2 and "MAD" in _ss_src2 and ("sigma" in _ss_src2.lower() or "σ" in _ss_src2))
+except Exception as e:
+    check("D2: MAD comment presence check", False, str(e))
+
+section("D3 — CSWS criterion = None with fallback_delta_alpha staging")
+try:
+    from src.analyses.swi import compute_swi as _compute_swi_d3
+    from src.analyses.sleep_stages import SleepStageResult as _SSR_d3
+
+    _d3_sfreq = 200.0
+    _d3_dur = 300.0
+    _d3_n = int(_d3_dur * _d3_sfreq)
+    _d3_data = np.zeros((4, _d3_n), dtype=np.float32)
+    _d3_rec = _make_rec(_d3_data, sfreq=_d3_sfreq,
+                        channel_names=["Pz", "Cz", "C3", "C4"])
+
+    _n_ep_d3 = int(_d3_dur // 30)
+    _d3_stages_fb = _SSR_d3(
+        epoch_labels=["N2"] * _n_ep_d3,
+        epoch_seconds=30.0,
+        confidence="fallback",
+        stage_minutes={"W": 0.0, "N1": 0.0, "N2": _n_ep_d3 * 0.5, "N3": 0.0, "REM": 0.0},
+        sleep_efficiency_pct=100.0,
+        n_nrem_cycles_estimated=0,
+        channel_used="Cz",
+        method="fallback_delta_alpha",
+    )
+    _d3_result = _compute_swi_d3(_d3_rec, _d3_stages_fb)
+    check("D3: csws_criterion_met is None with fallback_delta_alpha",
+          _d3_result.csws_criterion_met is None,
+          f"got {_d3_result.csws_criterion_met!r}")
+    check("D3: notes contains csws_not_evaluable_with_fallback_staging",
+          "csws_not_evaluable_with_fallback_staging" in _d3_result.notes,
+          f"notes={_d3_result.notes}")
+    check("D3: csws_criterion_met is NOT False",
+          _d3_result.csws_criterion_met is not False)
+
+    _d3_stages_yasa = _SSR_d3(
+        epoch_labels=["N3"] * _n_ep_d3,
+        epoch_seconds=30.0,
+        confidence="heuristic",
+        stage_minutes={"W": 0.0, "N1": 0.0, "N2": 0.0, "N3": _n_ep_d3 * 0.5, "REM": 0.0},
+        sleep_efficiency_pct=100.0,
+        n_nrem_cycles_estimated=0,
+        channel_used="Cz",
+        method="yasa",
+    )
+    _d3_result_yasa = _compute_swi_d3(_d3_rec, _d3_stages_yasa)
+    check("D3: csws_criterion_met is bool (not None) with yasa staging",
+          isinstance(_d3_result_yasa.csws_criterion_met, bool),
+          f"got {type(_d3_result_yasa.csws_criterion_met)!r}")
+except Exception as e:
+    check("D3: CSWS fallback staging test", False, str(e))
+
+section("D4 — HFO windowing: _power_in_band un-windowed (deliberate, documented)")
+try:
+    import inspect as _d4_inspect
+    from src.analyses import hfo_ripples as _hfo_mod_d4
+    _hfo_src_d4 = _d4_inspect.getsource(_hfo_mod_d4)
+    check("D4: _peak_freq uses Hanning window",
+          "np.hanning" in _hfo_src_d4 or "hanning" in _hfo_src_d4.lower())
+    check("D4: _power_in_band documents deliberate omission of windowing",
+          "deliberate" in _hfo_src_d4.lower() or
+          "intentionally" in _hfo_src_d4.lower() or
+          "Intentionally" in _hfo_src_d4)
+    check("D4: windowing inconsistency explicitly acknowledged in comment",
+          "Design decision" in _hfo_src_d4 or
+          "design decision" in _hfo_src_d4.lower() or
+          "inconsistency" in _hfo_src_d4.lower())
+except Exception as e:
+    check("D4: HFO windowing documentation check", False, str(e))
+
+section("D5 — activation_factor = None when wake_rate < 0.1")
+try:
+    from src.analyses.state_split import compute_state_split as _css_d5
+    from src.analyses.state_split import summarize_state_split as _sss_d5
+    from src.analyses.sleep_stages import SleepStageResult as _SSR_d5
+
+    _d5_sfreq = 200.0
+    _d5_dur = 300.0
+    _d5_n = int(_d5_dur * _d5_sfreq)
+    # Near-zero amplitude: no spikes detected → wake_rate = 0
+    _d5_data = (np.random.default_rng(7).standard_normal((4, _d5_n)) * 0.001).astype(np.float32)
+    _d5_rec = _make_rec(_d5_data, sfreq=_d5_sfreq,
+                        channel_names=["Pz", "Cz", "C3", "C4"])
+
+    _n_ep_d5 = int(_d5_dur // 30)
+    _d5_stages = _SSR_d5(
+        epoch_labels=["W"] + ["N2"] * (_n_ep_d5 - 1),
+        epoch_seconds=30.0,
+        confidence="heuristic",
+        stage_minutes={"W": 0.5, "N1": 0.0, "N2": (_n_ep_d5 - 1) * 0.5, "N3": 0.0, "REM": 0.0},
+        sleep_efficiency_pct=90.0,
+        n_nrem_cycles_estimated=0,
+        channel_used="Cz",
+        method="yasa",
+    )
+    _d5_result = _css_d5(_d5_rec, _d5_stages)
+    # With near-zero amplitude, wake_rate == 0 < 0.1 → indeterminate
+    check("D5: near-zero wake → activation_factor is None",
+          _d5_result.activation_factor is None,
+          f"wake_rate={_d5_result.wake_rate_per_min:.4f}, factor={_d5_result.activation_factor!r}")
+    check("D5: near-zero wake → activation_label='indeterminate'",
+          _d5_result.activation_label == "indeterminate",
+          f"got {_d5_result.activation_label!r}")
+    check("D5: note wake_rate_too_low_to_compute_activation appended",
+          "wake_rate_too_low_to_compute_activation" in _d5_result.notes,
+          f"notes={_d5_result.notes}")
+    _d5_summary = _sss_d5(_d5_result)
+    check("D5: summarize produces activation_factor=None (no crash)",
+          _d5_summary.get("activation_factor") is None)
+    check("D5: 'indeterminate' in schema ACTIVATION_LABELS",
+          "indeterminate" in _schema_mod.ACTIVATION_LABELS)
+except Exception as e:
+    check("D5: indeterminate activation_factor", False, str(e))
+
+try:
+    from src.clinical.impression import build_impression as _bi_d5
+    _d5_imp = _bi_d5({
+        "state_split": {
+            "activation_label": "indeterminate",
+            "activation_factor": None,
+            "nrem_rate_per_min": 5.0,
+            "wake_rate_per_min": 0.0,
+        }
+    })
+    check("D5: impression.py skips activation sentence when factor is None",
+          "Sleep activation factor" not in _d5_imp,
+          f"found unwanted sentence; impression starts: {_d5_imp[:80]!r}")
+except Exception as e:
+    check("D5: impression.py indeterminate skip", False, str(e))
+
+section("D6 — Rayleigh test comment: accurate for n>=50, not n>=10")
+try:
+    import inspect as _d6_inspect
+    from src.analyses import coupling as _coupling_mod_d6
+    _cs_d6 = _d6_inspect.getsource(_coupling_mod_d6)
+    check("D6: comment says 'Accurate for n >= 50'",
+          "Accurate for n >= 50" in _cs_d6 or
+          "accurate for n >= 50" in _cs_d6.lower())
+    check("D6: comment mentions 10-30% error for n<20",
+          "10-30%" in _cs_d6 or "10–30%" in _cs_d6)
+    check("D6: rayleigh_approximation_n_lt_20 note still emitted in code",
+          "rayleigh_approximation_n_lt_20" in _cs_d6)
+    # Old misleading claim "accurate for n >= 10" should no longer appear as
+    # a standalone accuracy statement (the note is still there as a label string)
+    check("D6: old 'accurate for n >= 10' claim updated in docstring",
+          "accurate for n >= 10)" not in _cs_d6.lower() and
+          "accurate for n >= 10." not in _cs_d6.lower())
+except Exception as e:
+    check("D6: Rayleigh comment honesty check", False, str(e))
 
 
 # ─── Final ───────────────────────────────────────────────────────────────────

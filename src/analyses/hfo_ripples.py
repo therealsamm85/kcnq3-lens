@@ -145,7 +145,17 @@ def _peak_freq(segment: np.ndarray, sfreq: float, lo: float = 80.0, hi: float = 
 
 
 def _power_in_band(segment: np.ndarray, sfreq: float, lo: float, hi: float) -> float:
-    """Total power in frequency band via FFT magnitude squared."""
+    """Total power in frequency band via un-windowed rFFT magnitude squared.
+
+    Intentionally omits windowing (unlike _peak_freq which uses Hanning).
+    Design decision: for the Burnos frequency-specificity ratio we need
+    unbiased total band energy, not spectral resolution. Applying a Hanning
+    window would reduce each band's power by ~50% and introduce non-uniform
+    leakage suppression near the 250 Hz boundary, distorting the ratio when
+    energy sits close to that edge. The inconsistency between _peak_freq
+    (windowed for frequency precision) and _power_in_band (un-windowed for
+    unbiased total power) is deliberate and documented here.
+    """
     n = len(segment)
     if n < 4:
         return 0.0

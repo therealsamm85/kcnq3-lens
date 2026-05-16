@@ -88,6 +88,10 @@ SPINDLE_INTERPRETATIONS: frozenset[str] = frozenset({
 
 ACTIVATION_LABELS: frozenset[str] = frozenset({
     "none", "mild", "moderate", "strong",
+    # "indeterminate": wake_rate < 0.1/min so activation factor cannot be
+    # computed (division by ~zero). Avoids spurious "strong" label from
+    # mixing units (using nrem_rate as proxy). See state_split.py D5 fix.
+    "indeterminate",
 })
 
 QUALITY_GRADES: frozenset[str] = frozenset({"A", "B", "C", "D", "unknown"})

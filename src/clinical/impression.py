@@ -83,9 +83,12 @@ def build_impression(findings: dict[str, Any],
     # 5. State split
     state = findings.get("state_split") or {}
     label = state.get("activation_label", "")
-    if label in ("moderate", "strong"):
+    af = state.get("activation_factor")
+    # Skip the activation sentence when activation_factor is None (indeterminate:
+    # wake_rate too low to compute a meaningful ratio — see state_split.py D5).
+    if label in ("moderate", "strong") and af is not None:
         sentences.append(
-            f"Sleep activation factor {state.get('activation_factor', 0):.1f}× "
+            f"Sleep activation factor {af:.1f}× "
             f"({label}; NREM rate {state.get('nrem_rate_per_min', 0):.1f}/min vs "
             f"wake rate {state.get('wake_rate_per_min', 0):.1f}/min)."
         )

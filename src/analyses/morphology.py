@@ -68,6 +68,13 @@ def compute_spike_morphology(
     """Classify spike morphology on the highest-burden channel.
 
     Returns the distribution of broadband widths (FWHM) of detected events.
+
+    Parameters
+    ----------
+    mad_multiplier : float
+        Threshold = mad_multiplier × MAD where MAD = median(|x − median(x)|).
+        Default 6.0 means threshold ≈ 4σ for Gaussian noise (MAD ≈ 0.6745σ,
+        so 6 × MAD ≈ 4σ — NOT 6σ). To target N σ-units use ≈ N / 0.6745.
     """
     ch_idx = rec.channel_index(target_channel)
     if ch_idx is None:
@@ -114,6 +121,9 @@ def compute_spike_morphology(
         local_mad = np.median(np.abs(ep_centered))
         local_rms = float(np.sqrt(np.mean(ep_det ** 2)))
         # Require: peak > mad_multiplier × MAD  AND  peak > 3 × RMS
+        # mad_multiplier=6.0 means threshold = 6 × MAD where MAD = median(|x−med|).
+        # For Gaussian data: MAD ≈ 0.6745σ, so 6×MAD ≈ 4σ (NOT 6σ).
+        # If you want N σ-units, use mad_multiplier ≈ N / 0.6745.
         local_threshold = max(mad_multiplier * local_mad, 3.0 * local_rms)
         if local_threshold <= 0 or not np.isfinite(local_threshold):
             per_epoch_counts.append(0)

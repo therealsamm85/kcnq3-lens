@@ -36,14 +36,19 @@ class StateSplitResult:
     wake_rate_per_min: float
     nrem_rate_per_min: float
     rem_rate_per_min: float
-    activation_factor: float       # nrem / wake
+    activation_factor: float | None  # nrem / wake; None when wake_rate < 0.1 (indeterminate)
     wake_minutes: float
     nrem_minutes: float
     rem_minutes: float
     n_wake_spikes: int
     n_nrem_spikes: int
     n_rem_spikes: int
-    activation_label: str          # 'none' | 'mild' | 'moderate' | 'strong'
+    activation_label: str            # 'none' | 'mild' | 'moderate' | 'strong' | 'indeterminate'
+    notes: list = None  # type: ignore[assignment]
+
+    def __post_init__(self):
+        if self.notes is None:
+            self.notes = []
 
 
 def compute_state_split(
@@ -86,6 +91,9 @@ def compute_state_split(
         centered = filtered - np.median(filtered)
         local_mad = np.median(np.abs(centered))
         local_rms = float(np.sqrt(np.mean(filtered ** 2)))
+        # mad_multiplier=6.0 means threshold = 6 × MAD where MAD = median(|x−med|).
+        # For Gaussian data: MAD ≈ 0.6745σ, so 6×MAD ≈ 4σ (NOT 6σ).
+        # If you want N σ-units, use mad_multiplier ≈ N / 0.6745.
         threshold = max(mad_multiplier * local_mad, 3.0 * local_rms)
         if threshold <= 0 or not np.isfinite(threshold):
             n_peaks = 0
@@ -108,28 +116,32 @@ def compute_state_split(
     nrem_rate = n_nrem / m_nrem if m_nrem > 0 else 0.0
     rem_rate = n_rem / m_rem if m_rem > 0 else 0.0
 
-    # Activation factor with floor on wake_rate to avoid division by ~zero
+    # Activation factor: nrem_rate / wake_rate.
+    # When wake_rate < 0.1 /min, the denominator is essentially zero. Using
+    # nrem_rate directly as a proxy (old behaviour) mixes units (rate vs ratio)
+    # and can produce a spurious "strong" label. Instead, mark as indeterminate.
+    state_notes: list[str] = []
     if wake_rate < 0.1:
-        # If wake is essentially silent, define factor as NREM rate (cap)
-        activation = nrem_rate
+        activation: float | None = None
+        label = "indeterminate"
+        state_notes.append("wake_rate_too_low_to_compute_activation")
     else:
         activation = nrem_rate / wake_rate
-
-    if activation < 1.5:
-        label = "none"
-    elif activation < 3.0:
-        label = "mild"
-    elif activation < 10.0:
-        label = "moderate"
-    else:
-        label = "strong"
+        if activation < 1.5:
+            label = "none"
+        elif activation < 3.0:
+            label = "mild"
+        elif activation < 10.0:
+            label = "moderate"
+        else:
+            label = "strong"
 
     return StateSplitResult(
         channel=target_channel,
         wake_rate_per_min=float(wake_rate),
         nrem_rate_per_min=float(nrem_rate),
         rem_rate_per_min=float(rem_rate),
-        activation_factor=float(activation),
+        activation_factor=activation,
         wake_minutes=float(m_wake),
         nrem_minutes=float(m_nrem),
         rem_minutes=float(m_rem),
@@ -137,16 +149,18 @@ def compute_state_split(
         n_nrem_spikes=int(n_nrem),
         n_rem_spikes=int(n_rem),
         activation_label=label,
+        notes=state_notes,
     )
 
 
 def summarize_state_split(result: StateSplitResult) -> dict:
+    af = result.activation_factor
     return {
         "channel": result.channel,
         "wake_rate_per_min": round(result.wake_rate_per_min, 1),
         "nrem_rate_per_min": round(result.nrem_rate_per_min, 1),
         "rem_rate_per_min": round(result.rem_rate_per_min, 1),
-        "activation_factor": round(result.activation_factor, 1),
+        "activation_factor": round(af, 1) if af is not None else None,
         "activation_label": result.activation_label,
         "wake_minutes": round(result.wake_minutes, 1),
         "nrem_minutes": round(result.nrem_minutes, 1),
@@ -154,4 +168,5 @@ def summarize_state_split(result: StateSplitResult) -> dict:
         "n_wake_spikes": result.n_wake_spikes,
         "n_nrem_spikes": result.n_nrem_spikes,
         "n_rem_spikes": result.n_rem_spikes,
+        "notes": result.notes,
     }

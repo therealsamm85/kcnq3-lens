@@ -24,6 +24,15 @@ from scipy.signal import butter, sosfiltfilt, welch
 
 from ..readers.base import EEGRecording
 
+_DISCLAIMER = (
+    "PDR norm interpretation ('age_appropriate'/'mildly_slow'/'severely_slow') "
+    "uses _PDR_AGE_NORMS table values that are a TOOL CONVENTION based on "
+    "common textbook ranges (Niedermeyer 2005, Hagne 1968). The lower bounds "
+    "are conservative — tighter than some sources allow. The 'severely_slow' "
+    "label fires at >2 Hz below the lower bound; use this only as a flag for "
+    "discussion with the clinician, not as a diagnostic statement."
+)
+
 
 @dataclass
 class BackgroundResult:
@@ -81,6 +90,12 @@ def compute_background_power(
     age_years : float, optional
     delta_artifact_threshold : float, optional
         If provided, skips epochs where delta RMS exceeds this (motion artifact).
+
+    Notes
+    -----
+    Delta band: [0.5, 4.0) Hz — AASM convention (Niedermeyer 2005). The 0.5 Hz
+    lower bound harmonises with sleep_stages.py fallback staging. Previously
+    this module used [1, 4) Hz, which differed from the sleep module.
     """
     sfreq = rec.sfreq
     sos_hp = butter(4, 0.5, btype="high", fs=sfreq, output="sos")
@@ -123,7 +138,9 @@ def compute_background_power(
                 continue
 
         f, P = welch(post, fs=sfreq, nperseg=int(sfreq * 4))
-        delta_pow.append(P[(f >= 1) & (f < 4)].sum())
+        # D1: delta = [0.5, 4.0) Hz — harmonised with sleep_stages.py (AASM/Niedermeyer).
+        # Previously [1, 4) Hz which disagreed with the fallback staging band.
+        delta_pow.append(P[(f >= 0.5) & (f < 4)].sum())
         theta_pow.append(P[(f >= 4) & (f < 8)].sum())
         alpha_pow.append(P[(f >= 8) & (f < 13)].sum())
         beta_pow.append(P[(f >= 13) & (f < 30)].sum())
@@ -186,4 +203,5 @@ def summarize_background(result: BackgroundResult) -> dict:
         "posterior_dominant_rhythm_hz": round(result.posterior_dominant_rhythm_hz, 1),
         "age_normative_pdr": result.age_normative_pdr,
         "interpretation": result.interpretation,
+        "disclaimer": _DISCLAIMER,
     }
