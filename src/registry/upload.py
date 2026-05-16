@@ -35,7 +35,7 @@ from typing import Any
 
 # Defaults — overridable via env var so a fork or staging registry can
 # point the contribute button somewhere else without code changes.
-DEFAULT_OWNER = os.environ.get("KCNQ3_REGISTRY_OWNER", "your-org")
+DEFAULT_OWNER = os.environ.get("KCNQ3_REGISTRY_OWNER", "therealsamm85")
 DEFAULT_REPO = os.environ.get("KCNQ3_REGISTRY_REPO", "kcnq3-registry")
 
 
