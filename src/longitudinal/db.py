@@ -52,7 +52,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _INIT_LOCK = threading.Lock()
 _INIT_DONE: set[str] = set()  # paths that have been initialized this process
 
@@ -162,11 +162,36 @@ def _init_schema(conn: sqlite3.Connection) -> None:
 
 
 def _apply_migrations(conn: sqlite3.Connection) -> None:
-    """Apply any schema-version migrations beyond v1. Idempotent."""
+    """Apply any schema-version migrations beyond v1. Idempotent.
+
+    Migration history:
+      v1 → initial schema (recordings, diary, meta, schema_version)
+      v2 → added submissions_log table (v0.12.3)
+    """
     cur = conn.execute("SELECT COALESCE(MAX(version), 0) FROM schema_version")
     current = cur.fetchone()[0]
+
+    if current < 2:
+        # v1 → v2: add submissions_log for upgraded databases.
+        # New databases already have it via _init_schema's CREATE TABLE IF NOT
+        # EXISTS, so this is a no-op for them and safe to run unconditionally.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS submissions_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                submission_id TEXT NOT NULL UNIQUE,
+                opened_at TEXT NOT NULL,
+                issue_url TEXT NOT NULL DEFAULT '',
+                submission_json TEXT NOT NULL,
+                UNIQUE(submission_id)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_submissions_log_opened "
+            "ON submissions_log(opened_at)"
+        )
+        _meta_set(conn, "v2_migration_applied", _now_iso())
+
     if current < _SCHEMA_VERSION:
-        # Future migrations would go here, gated by current version.
         conn.execute(
             "INSERT OR REPLACE INTO schema_version (version, applied_at) "
             "VALUES (?, ?)",

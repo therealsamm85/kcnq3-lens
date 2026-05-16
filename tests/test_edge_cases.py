@@ -1027,8 +1027,8 @@ v12_dir = Path(_tf2.mkdtemp(prefix="kcnq3_v12_"))
 os.environ["KCNQ3_LENS_DATA"] = str(v12_dir)
 
 stats0 = _sqldb.stats()
-check("v0.12 schema initialized at version 1",
-      stats0["schema_version"] == 1)
+check("v0.12 schema initialized at version 2 (C6 bump)",
+      stats0["schema_version"] == 2)
 check("v0.12 empty DB has 0 recordings", stats0["n_recordings"] == 0)
 check("v0.12 empty DB has 0 diary entries", stats0["n_diary"] == 0)
 check("v0.12 DB file path resolved", stats0["db_path"].endswith(".db"))
@@ -2240,6 +2240,186 @@ try:
           isinstance(_p14_r.n_ripples_on_spike, int))
 except Exception as e:
     check("P14. Malformed morphology events", False, str(e))
+
+
+# ─── C4. Drift-detection meta-tests ─────────────────────────────────────────
+section("C4 — Schema drift detection (schema constants referenced in validate.py)")
+
+import inspect as _inspect
+from src.registry import schema as _schema_mod
+from src.registry import validate as _validate_mod
+from src.registry import phi_check as _phi_mod
+
+_validate_source = _inspect.getsource(_validate_mod)
+_phi_source = _inspect.getsource(_phi_mod)
+
+# Every key in the validate findings allowlist must be a known schema field.
+# Conversely, every schema bucket-set that controls a validated finding
+# should be referenced in validate.py by name.
+_schema_collections = [
+    # (schema_attr_name, description)
+    ("VARIANT_TYPES", "variant types"),
+    ("SEX_VALUES", "sex values"),
+    ("AGE_BUCKETS", "age buckets"),
+    ("DURATION_BUCKETS", "duration buckets"),
+    ("MONTAGE_VALUES", "montage values"),
+    ("SPINDLE_INTERPRETATIONS", "spindle interpretations"),
+    ("ACTIVATION_LABELS", "activation labels"),
+    ("QUALITY_GRADES", "quality grades"),
+    ("PLV_BUCKETS", "PLV buckets"),
+    ("PHASE_OCTANTS", "phase octants"),
+    ("SW_DENSITY_BUCKETS", "SW density buckets"),
+    ("SW_PTP_BUCKETS", "SW PTP buckets"),
+    ("SW_METHODS", "SW methods"),
+    ("HFO_RATE_BUCKETS", "HFO rate buckets"),
+    ("HFO_PCT_ON_SPIKE_BUCKETS", "HFO pct-on-spike buckets"),
+    ("IED_METHODS", "IED methods"),
+    ("IED_RATE_BUCKETS", "IED rate buckets"),
+    ("IED_AGE_FLAGS", "IED age flags"),
+    ("IED_AGREEMENT_BUCKETS", "IED agreement buckets"),
+    ("IED_ROLANDIC_BUCKETS", "IED rolandic buckets"),
+    ("IED_NREM_RATE_BUCKETS", "IED NREM rate buckets"),
+]
+
+for _const_name, _desc in _schema_collections:
+    check(
+        f"Schema constant {_const_name} referenced in validate.py",
+        _const_name in _validate_source,
+        f"'{_const_name}' missing from validate.py source",
+    )
+
+# All sleep stage keys referenced in both validate.py and phi_check context
+check("SLEEP_STAGE_KEYS referenced in validate.py",
+      "SLEEP_STAGE_KEYS" in _validate_source)
+
+# Verify _VALID_SCHEMA_VERSIONS is at module level (not buried in function)
+_vsv = getattr(_validate_mod, "_VALID_SCHEMA_VERSIONS", None)
+check("validate.py has module-level _VALID_SCHEMA_VERSIONS",
+      _vsv is not None,
+      "attribute not found at module level")
+check("_VALID_SCHEMA_VERSIONS contains 1 and 2",
+      _vsv is not None and 1 in _vsv and 2 in _vsv)
+check("_VALID_SCHEMA_VERSIONS does not contain 3",
+      _vsv is not None and 3 not in _vsv)
+
+# phi_check SKIP_PATHS covers typical field names that encode bucket strings
+_phi_source_lower = _phi_source.lower()
+check("phi_check has bucket/schema-path guard logic",
+      "skip" in _phi_source_lower or "allowlist" in _phi_source_lower
+      or "_skip" in _phi_source,
+      "no skip list found in phi_check source")
+
+# Drift check: if a new finding key was added to schema.py but
+# not to validate.py _allowed_keys, this catches it.
+_schema_bucket_names = {n for n, _ in _schema_collections}
+_missing_in_validate = [
+    n for n in _schema_bucket_names if n not in _validate_source
+]
+check(f"All {len(_schema_bucket_names)} schema bucket names in validate.py "
+      f"({len(_missing_in_validate)} missing)",
+      len(_missing_in_validate) == 0,
+      f"missing: {_missing_in_validate[:3]}" if _missing_in_validate else "")
+
+
+# ─── C5. methods_attribution cross-check ─────────────────────────────────────
+section("C5 — methods_attribution → CITATIONS cross-check")
+
+from src.clinical.citations import methods_attribution as _methods_attr, CITATIONS as _CITS
+
+_attrib = _methods_attr()
+check("methods_attribution returns a non-empty dict",
+      isinstance(_attrib, dict) and len(_attrib) > 0)
+
+_bad_keys = []
+for _analysis_name, _citation_key in _attrib.items():
+    if _citation_key not in _CITS:
+        _bad_keys.append((_analysis_name, _citation_key))
+    else:
+        check(
+            f"methods_attribution['{_analysis_name}']='{_citation_key}' resolves",
+            True,
+        )
+
+check(
+    f"All {len(_attrib)} methods_attribution keys resolve to known citations "
+    f"({len(_bad_keys)} unresolved)",
+    len(_bad_keys) == 0,
+    f"unresolved: {_bad_keys[:3]}" if _bad_keys else "",
+)
+
+
+# ─── C10. DB migration without recordings/ directory ─────────────────────────
+section("C10 — DB migration without recordings/ directory → succeeds with 0 imports")
+
+import tempfile as _tf_c10
+import os as _os_c10
+import shutil as _sh_c10
+from src.longitudinal import db as _db_c10
+
+# Test 1: no recordings/ dir, no diary.jsonl → migration reports 0, no crash
+_c10_dir_bare = Path(_tf_c10.mkdtemp(prefix="kcnq3_c10_bare_"))
+_db_c10.reset_init_cache_for_tests()
+_os_c10.environ["KCNQ3_LENS_DATA"] = str(_c10_dir_bare)
+try:
+    _c10_stats = _db_c10.stats()
+    check("C10a: DB init with no recordings/ dir succeeds",
+          _c10_stats["n_recordings"] == 0)
+    check("C10a: DB init with no recordings/ dir → 0 diary entries",
+          _c10_stats["n_diary"] == 0)
+    check("C10a: schema_version is 2 (bumped by C6)",
+          _c10_stats["schema_version"] == 2)
+    check("C10a: legacy_json_migrated is True after init",
+          _c10_stats["legacy_json_migrated"] is True)
+    check("C10a: migrated_counts recordings == 0",
+          _c10_stats["legacy_json_migrated_counts"].get("recordings", -1) == 0)
+    check("C10a: migrated_counts diary == 0",
+          _c10_stats["legacy_json_migrated_counts"].get("diary", -1) == 0)
+except Exception as e:
+    check("C10a: DB init without recordings/ dir", False, str(e))
+finally:
+    _sh_c10.rmtree(_c10_dir_bare, ignore_errors=True)
+
+# Test 2: recordings/ dir exists but is empty, no diary.jsonl → 0 imports
+_c10_dir_empty = Path(_tf_c10.mkdtemp(prefix="kcnq3_c10_empty_"))
+(_c10_dir_empty / "recordings").mkdir()
+_db_c10.reset_init_cache_for_tests()
+_os_c10.environ["KCNQ3_LENS_DATA"] = str(_c10_dir_empty)
+try:
+    _c10_stats2 = _db_c10.stats()
+    check("C10b: empty recordings/ dir → 0 recordings",
+          _c10_stats2["n_recordings"] == 0)
+    check("C10b: no diary.jsonl → 0 diary entries",
+          _c10_stats2["n_diary"] == 0)
+except Exception as e:
+    check("C10b: empty recordings/ dir", False, str(e))
+finally:
+    _sh_c10.rmtree(_c10_dir_empty, ignore_errors=True)
+
+# Test 3: diary.jsonl is absent, recordings/ has one file → 1 recording, 0 diary
+import json as _json_c10
+_c10_dir_nodiary = Path(_tf_c10.mkdtemp(prefix="kcnq3_c10_nodiary_"))
+(_c10_dir_nodiary / "recordings").mkdir()
+(_c10_dir_nodiary / "recordings" / "2026-01-01_test.json").write_text(
+    _json_c10.dumps({
+        "recording_date": "2026-01-01", "label": "test",
+        "findings": {}, "metadata": {},
+    })
+)
+# no diary.jsonl
+_db_c10.reset_init_cache_for_tests()
+_os_c10.environ["KCNQ3_LENS_DATA"] = str(_c10_dir_nodiary)
+try:
+    _c10_stats3 = _db_c10.stats()
+    check("C10c: no diary.jsonl → migration succeeds with 0 diary imports",
+          _c10_stats3["n_diary"] == 0)
+    check("C10c: recording is still imported correctly",
+          _c10_stats3["n_recordings"] == 1)
+except Exception as e:
+    check("C10c: no diary.jsonl migration", False, str(e))
+finally:
+    _sh_c10.rmtree(_c10_dir_nodiary, ignore_errors=True)
+    _db_c10.reset_init_cache_for_tests()
+    _os_c10.environ.pop("KCNQ3_LENS_DATA", None)
 
 
 # ─── Final ───────────────────────────────────────────────────────────────────

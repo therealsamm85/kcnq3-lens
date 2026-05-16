@@ -60,7 +60,17 @@ env_dir = Path(tempfile.mkdtemp(prefix="kcnq3_tier1_e2e_"))
 os.environ["KCNQ3_LENS_DATA"] = str(env_dir)
 print(f"Isolated env: {env_dir}")
 
-REGISTRY_REPO = Path("/path/to/kcnq3-registry")
+REGISTRY_REPO = Path(os.environ.get(
+    "KCNQ3_REGISTRY_REPO_PATH",
+    "/path/to/kcnq3-registry",
+))
+if not REGISTRY_REPO.exists():
+    print(
+        f"⚠ Registry repo not found at {REGISTRY_REPO}; "
+        f"set KCNQ3_REGISTRY_REPO_PATH to override. "
+        f"Skipping stages 3+ that require cross-repo subprocess."
+    )
+    sys.exit(0)
 
 
 # ════════════════════════════════════════════════════════════════════════

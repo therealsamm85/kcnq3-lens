@@ -52,7 +52,7 @@ APP_PATH = str(Path(__file__).parent.parent / "app.py")
 # ─── 1. App loads in each mode without runtime error ────────────────────────
 section("App boot — each mode loads without exception")
 
-for mode in ("quickstart", "single", "compare", "longitudinal"):
+for mode in ("quickstart", "single", "compare", "longitudinal", "contribute"):
     try:
         at = AppTest.from_file(APP_PATH, default_timeout=30)
         # Set session_state BEFORE first run — this is how AppTest sets
@@ -69,6 +69,45 @@ for mode in ("quickstart", "single", "compare", "longitudinal"):
               len(at.sidebar.radio) > 0)
     except Exception as e:
         check(f"Mode default boot ({mode})", False, str(e))
+
+
+# ─── 1b. Contribute mode with fresh app (no seeded recordings) ──────────────
+section("Contribute mode — no saved recordings (empty state)")
+
+import os as _os_contrib
+import tempfile as _tf_contrib
+_contrib_env_dir = _tf_contrib.mkdtemp(prefix="kcnq3_contrib_empty_")
+_os_contrib.environ["KCNQ3_LENS_DATA"] = _contrib_env_dir
+
+try:
+    from src.longitudinal import db as _db_for_contrib
+    _db_for_contrib.reset_init_cache_for_tests()
+
+    at_contrib = AppTest.from_file(APP_PATH, default_timeout=30)
+    at_contrib.session_state["language"] = "en"
+    at_contrib.run()
+
+    radio_contrib = at_contrib.sidebar.radio[0] if at_contrib.sidebar.radio else None
+    if radio_contrib is not None:
+        # Switch to contribute mode
+        try:
+            radio_contrib.set_value("contribute").run()
+            check("Contribute mode with empty DB boots without exception",
+                  not at_contrib.exception,
+                  str(at_contrib.exception) if at_contrib.exception else "")
+        except Exception:
+            # Some AppTest versions cannot set_value by label directly;
+            # in that case just check the boot didn't already crash.
+            check("Contribute mode boot (set_value skipped — API mismatch)",
+                  not at_contrib.exception)
+    else:
+        check("Contribute mode radio present", False, "no radio widget found")
+except Exception as e:
+    check("Contribute mode empty-state AppTest", False, f"{type(e).__name__}: {e}")
+finally:
+    import shutil as _sh_contrib
+    _sh_contrib.rmtree(_contrib_env_dir, ignore_errors=True)
+    _os_contrib.environ.pop("KCNQ3_LENS_DATA", None)
 
 
 # ─── 2. Quick Start widgets set + analyze button visible ─────────────────────

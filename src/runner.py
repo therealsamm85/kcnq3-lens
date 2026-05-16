@@ -4,6 +4,14 @@ Used by both the single-recording and pre/post-comparison views in the app.
 Pure function — no Streamlit dependency.
 """
 
+# ─── Event time convention ───────────────────────────────────────────────────
+# All `_*_events` lists stored in `findings` use ABSOLUTE recording time
+# (seconds from recording start, NOT channel-local or epoch-local time).
+# This is an implicit contract between:
+#   - morphology, spindles, slow_waves, hfo_ripples, coupling, ied_ml
+# Changing this convention requires coordinating ALL consumers.
+# See also: docs/event-schema.md
+
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -240,6 +248,7 @@ def run_all_analyses(
         findings["_hfo_ripples_events"] = hfo.events
     except Exception as e:
         findings["hfo_ripples"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["hfo_ripples"] = str(e)
 
     # --- 11d. SO-spindle coupling / PLV (v0.13.2) — requires slow_waves + spindles ---
     try:
@@ -253,6 +262,7 @@ def run_all_analyses(
         findings["coupling"] = summarize_so_spindle_coupling(coupling)
     except Exception as e:
         findings["coupling"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["coupling"] = str(e)
 
     # --- 11e. Automated IED detection (v0.13.3) — Tier 2 ---
     try:
@@ -276,6 +286,7 @@ def run_all_analyses(
         findings["_ied_events"] = ied.events
     except Exception as e:
         findings["ied_ml"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["ied_ml"] = str(e)
 
     # --- 12. Clinical impression + recommendations (v0.6) ---
     # Built from all preceding findings; deterministic, no LLM.
@@ -305,5 +316,13 @@ def run_all_analyses(
     # Every numeric leaf is guaranteed finite (no NaN/Inf) and a Python type
     # (no numpy scalars). Prevents JSON-serialization failures, garbled PDFs,
     # and LLM confusion when degenerate inputs produce non-finite values.
+    #
+    # Pop private internal stores (keys starting with "_") so we don't round
+    # their float precision — event time_s values must stay full-precision for
+    # cross-module consumers (coupling, hfo_ripples, ied_ml).  The "_*" keys
+    # are restored after sanitization so callers can still access them.
+    internal = {k: findings.pop(k)
+                for k in list(findings.keys()) if k.startswith("_")}
     findings = safe_round_dict(findings, ndigits=3, default=0.0)
+    findings.update(internal)
     return findings
