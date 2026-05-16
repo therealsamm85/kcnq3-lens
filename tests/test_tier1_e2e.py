@@ -158,9 +158,6 @@ try:
         ),
         consent=make_consent(given=True),
         tool_version="0.12.4",
-        # Use v1 for registry-repo compatibility until kcnq3-registry is
-        # upgraded to accept schema_version=2.  (v0.13.4 work item)
-        schema_version_target=1,
     )
     submissions.append(sub)
     check("PHI-stuffed submission still built (PHI invisible)", True)
