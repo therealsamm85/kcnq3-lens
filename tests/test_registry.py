@@ -892,6 +892,259 @@ check("cohort_summary handles None gracefully",
       _agg.cohort_summary(None) == "no matching cohort")
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# C10 — schema_version edge cases
+# ═══════════════════════════════════════════════════════════════════════
+
+section("C10 — schema_version edge cases (validator rejects non-integer / out-of-range)")
+
+# 1.0 (float) — Python's {1, 2} set membership: 1.0 == 1 is True in Python,
+# so we must validate that the validator explicitly checks for int type.
+_sv_float = dict(
+    build_submission(findings=_good_findings(), user_input=_good_input(),
+                     consent=_good_consent(), tool_version="0.13.0")
+)
+_sv_float["schema_version"] = 1.0
+_ok_float, _errs_float = validate_submission(_sv_float)
+check("schema_version=1.0 (float) rejected",
+      not _ok_float,
+      f"errors: {_errs_float}")
+
+# -1 — negative integer
+_sv_neg = dict(
+    build_submission(findings=_good_findings(), user_input=_good_input(),
+                     consent=_good_consent(), tool_version="0.13.0")
+)
+_sv_neg["schema_version"] = -1
+_ok_neg, _errs_neg = validate_submission(_sv_neg)
+check("schema_version=-1 rejected",
+      not _ok_neg,
+      f"errors: {_errs_neg}")
+
+# 999999 — enormous integer
+_sv_big = dict(
+    build_submission(findings=_good_findings(), user_input=_good_input(),
+                     consent=_good_consent(), tool_version="0.13.0")
+)
+_sv_big["schema_version"] = 999999
+_ok_big, _errs_big = validate_submission(_sv_big)
+check("schema_version=999999 rejected",
+      not _ok_big,
+      f"errors: {_errs_big}")
+
+# "2" — string instead of int
+_sv_str = dict(
+    build_submission(findings=_good_findings(), user_input=_good_input(),
+                     consent=_good_consent(), tool_version="0.13.0")
+)
+_sv_str["schema_version"] = "2"
+_ok_str, _errs_str = validate_submission(_sv_str)
+check('schema_version="2" (string) rejected',
+      not _ok_str,
+      f"errors: {_errs_str}")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Track B — Privacy + PHI hardening patches (B1–B4)
+# ═══════════════════════════════════════════════════════════════════════
+
+section("B1 — NFKC Unicode normalisation + ASCII guard")
+
+# Cyrillic А (U+0410) looks identical to Latin A — must be caught after NFKC
+# normalisation because "Аnna Smith" doesn't match [A-Z][a-z]{1,} on raw bytes
+# but DOES after NFKC → "Anna Smith".
+_cyrillic_name = "Аnna Smith"   # Cyrillic А + "nna Smith"
+check(
+    "Cyrillic-A homoglyph name detected after NFKC normalisation",
+    bool(phi_check.scan_for_phi({"x": _cyrillic_name})),
+)
+
+# Plain ASCII name must still be caught (regression guard)
+check(
+    "ASCII 'Anna Smith' still detected",
+    bool(phi_check.scan_for_phi({"x": "Anna Smith"})),
+)
+
+# Combining diacritics — é is a non-ASCII letter so it gets flagged too
+# (homoglyph guard). This is conservative on purpose.
+_combining_flagged = "café menu"   # é (non-ASCII letter) → flagged
+check(
+    "String with non-ASCII letters (e.g. é) flagged by homoglyph guard",
+    bool(phi_check.scan_for_phi({"x": _combining_flagged})),
+)
+
+# ASCII guard: non-ASCII letter in intervention_name must raise BuildError
+try:
+    build_submission(
+        findings=_good_findings(),
+        user_input=_good_input(
+            intervention_type="medication",
+            intervention_name="sultiamé",   # é is non-ASCII
+            intervention_record_kind="post",
+        ),
+        consent=_good_consent(),
+        tool_version="0.13.4",
+    )
+    check("non-ASCII intervention_name rejected by ASCII guard", False)
+except BuildError as _e_b1:
+    check(
+        "non-ASCII intervention_name rejected by ASCII guard",
+        "non-ASCII" in str(_e_b1),
+    )
+
+# Pure ASCII intervention name still works
+try:
+    _sub_ascii = build_submission(
+        findings=_good_findings(),
+        user_input=_good_input(
+            intervention_type="medication",
+            intervention_name="sultiam",
+            intervention_record_kind="post",
+        ),
+        consent=_good_consent(),
+        tool_version="0.13.4",
+    )
+    check("pure ASCII intervention_name accepted after ASCII guard", True)
+except BuildError as _e_b1b:
+    check("pure ASCII intervention_name accepted after ASCII guard",
+          False, str(_e_b1b))
+
+
+section("B2 — SSN, German insurance number, IBAN patterns")
+
+# US SSN
+check(
+    "US SSN '123-45-6789' detected",
+    bool(phi_check.scan_for_phi({"x": "SSN: 123-45-6789"})),
+)
+
+# German Versicherungsnummer (coarse: letter + 9 digits)
+check(
+    "German insurance number 'A123456789' detected",
+    bool(phi_check.scan_for_phi({"x": "Versicherung A123456789"})),
+)
+
+# IBAN-like (DE-format)
+check(
+    "IBAN-like 'DE89370400440532013000' detected",
+    bool(phi_check.scan_for_phi({"x": "IBAN DE89370400440532013000"})),
+)
+
+# Clean short digit string must NOT fire SSN pattern
+check(
+    "short '12-34' does NOT fire SSN pattern",
+    not phi_check.scan_for_phi({"x": "12-34"}),
+)
+
+
+section("B3 — Aggregates download size cap")
+
+import unittest.mock as _mock5
+import tempfile as _tf_b3
+import os as _os_b3
+from src.registry import aggregates as _agg_b3
+import json as _json_b3
+
+# Build a minimal valid aggregates payload bigger than _MAX_AGG_BYTES
+_big_payload_b3 = {
+    "schema_version": 1,
+    "cells": [
+        {
+            "cell": {"level": "gene", "variant_gene": "KCNQ3"},
+            "n": 1,
+            "stats": {"background_pdr_hz": {"median": 7.0,
+                                             "p10": 5.0, "p90": 10.0}},
+        }
+    ],
+    "_padding": "x" * (5 * 1024 * 1024 + 1),   # exceed 5 MB
+}
+_big_raw_b3 = _json_b3.dumps(_big_payload_b3).encode("utf-8")
+
+
+class _FakeResp_B3:
+    def read(self, n=-1):
+        if n == -1:
+            return _big_raw_b3
+        return _big_raw_b3[:n]
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        pass
+
+
+_tf_b3_dir = _tf_b3.mkdtemp(prefix="kcnq3_b3_")
+_os_b3.environ["KCNQ3_LENS_DATA"] = _tf_b3_dir
+with _mock5.patch("src.registry.aggregates._urlreq.urlopen",
+                  return_value=_FakeResp_B3()):
+    try:
+        _agg_b3.fetch_aggregates()
+        check("oversized aggregates payload raises ValueError", False)
+    except ValueError as _ve_b3:
+        check(
+            "oversized aggregates payload raises ValueError",
+            "exceeds" in str(_ve_b3),
+        )
+
+# Verify cache file was NOT written (cache not poisoned)
+_cache_p_b3 = Path(_tf_b3_dir) / "aggregates_cache.json"
+check("cache not poisoned after oversized payload", not _cache_p_b3.exists())
+
+
+section("B4 — Auto-record: build_issue_url purity + record_submission wiring")
+
+import tempfile as _tf_b4
+import os as _os_b4
+from src.registry.upload import build_issue_url as _build_url_b4
+
+_sub_b4 = build_submission(
+    findings=_good_findings(),
+    user_input=_good_input(),
+    consent=_good_consent(),
+    tool_version="0.13.4",
+)
+_url_b4 = _build_url_b4(_sub_b4)
+check(
+    "build_issue_url returns a GitHub issues URL",
+    _url_b4.startswith("https://github.com/") and "issues/new" in _url_b4,
+)
+check(
+    "build_issue_url URL contains submission_id in body",
+    _sub_b4["submission_id"] in _url_b4,
+)
+
+# record_submission stores the row and list_submissions_log finds it
+_tf_b4_dir = _tf_b4.mkdtemp(prefix="kcnq3_b4_")
+_os_b4.environ["KCNQ3_LENS_DATA"] = _tf_b4_dir
+from src.longitudinal import db as _db_b4
+_db_b4.record_submission(
+    submission_id=_sub_b4["submission_id"],
+    submission=_sub_b4,
+    issue_url=_url_b4,
+)
+_log_b4 = _db_b4.list_submissions_log()
+check(
+    "record_submission stores row retrievable by list_submissions_log",
+    any(r["submission_id"] == _sub_b4["submission_id"] for r in _log_b4),
+)
+
+# Calling record_submission a second time raises IntegrityError (UNIQUE
+# constraint); the UI layer (app.py) suppresses it with try/except.
+import sqlite3 as _sqlite3_b4
+_raised_integrity = False
+try:
+    _db_b4.record_submission(
+        submission_id=_sub_b4["submission_id"],
+        submission=_sub_b4,
+        issue_url=_url_b4,
+    )
+except _sqlite3_b4.IntegrityError:
+    _raised_integrity = True
+check(
+    "duplicate record_submission raises IntegrityError (UI must catch it)",
+    _raised_integrity,
+)
+
+
 # ─── Final ──────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")

@@ -49,6 +49,10 @@ from .upload import DEFAULT_OWNER, DEFAULT_REPO
 CACHE_TTL_SECONDS = 24 * 3600
 SCHEMA_VERSION = 1
 
+# B3: Hard cap on aggregates payload to prevent memory exhaustion from a
+# malicious or misconfigured registry serving a multi-GB JSON response.
+_MAX_AGG_BYTES = 5 * 1024 * 1024   # 5 MB
+
 
 def _cache_path() -> Path:
     base = Path(os.environ.get(
@@ -142,7 +146,12 @@ def fetch_aggregates(
         headers={"User-Agent": "kcnq3-lens-aggregates-fetcher"},
     )
     with _urlreq.urlopen(req, timeout=timeout_s) as resp:
-        raw = resp.read().decode("utf-8")
+        raw = resp.read(_MAX_AGG_BYTES + 1).decode("utf-8")
+    if len(raw.encode("utf-8")) > _MAX_AGG_BYTES:
+        raise ValueError(
+            f"Aggregates payload exceeds {_MAX_AGG_BYTES} bytes — "
+            f"refusing to load."
+        )
     payload = json.loads(raw)
     if not _validate_aggregates_shape(payload):
         raise ValueError(

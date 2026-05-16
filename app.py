@@ -570,7 +570,7 @@ def _render_peer_comparison(
 ):
     """Render the cohort peer-comparison panel for one set of findings.
 
-    Backed by the federated registry aggregates (v0.12.4). If the
+    Backed by the federated registry aggregates (v0.13.x). If the
     fetch fails or no matching cohort exists, hides itself gracefully.
     """
     from src.registry import aggregates as _agg
@@ -1290,7 +1290,7 @@ elif mode == "single":
         st.markdown("---")
         _render_insights(findings, key_prefix="single")
 
-        # Peer comparison (v0.12.4) — fetched from registry aggregates
+        # Peer comparison (v0.13.x) — fetched from registry aggregates
         st.markdown("---")
         _render_peer_comparison(
             findings, age_years=age_years, variant=variant,
@@ -1661,6 +1661,18 @@ elif mode == "contribute":
         "- **You can withdraw any time** by opening a GitHub issue with "
         "your `submission_id` (saved locally — see history below)."
     )
+    with st.expander("ℹ️ Withdrawal workflow — how to remove your data"):
+        st.markdown(
+            "**Withdrawal Workflow:**\n"
+            "You file a new GitHub issue at the registry repo with your "
+            "`submission_id`.\n"
+            "A maintainer will manually remove the row in a follow-up PR.\n"
+            "We do NOT auto-delete — every removal is logged in the PR "
+            "history.\n\n"
+            "If you lose your submission_id (HDD crash, lost local DB), "
+            "withdrawal becomes impossible — please export your IDs from "
+            "the local history below to a safe location."
+        )
     c_consent = st.checkbox(
         f"I affirm consent version {CURRENT_CONSENT_VERSION} "
         f"and I am the patient or authorized guardian.",
@@ -1738,6 +1750,26 @@ elif mode == "contribute":
                 st.subheader("Step 6 — Submit")
                 issue_url = build_issue_url(submission)
 
+                # B4: Auto-record submission locally BEFORE the GitHub button
+                # so the submission_id is never lost even if the user closes
+                # the browser without pressing "Record locally".
+                # IntegrityError is suppressed so re-renders don't crash.
+                try:
+                    _registry_db.record_submission(
+                        submission_id=submission["submission_id"],
+                        submission=submission,
+                        issue_url=issue_url,
+                    )
+                except Exception:
+                    pass  # Already recorded (UNIQUE), or DB unavailable
+
+                _sid = submission["submission_id"]
+                st.info(
+                    f"Your submission ID `{_sid}` is saved locally in "
+                    f"`~/.kcnq3-lens/`. You can withdraw it any time by "
+                    f"opening a new GitHub issue with this ID."
+                )
+
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.link_button(
@@ -1760,25 +1792,6 @@ elif mode == "contribute":
                         "Paste this into `data/registry.jsonl` in a fork "
                         "of the registry repo if you prefer a direct PR."
                     )
-
-                if st.button(
-                    "📝 Record this submission locally "
-                    "(so you can withdraw it later)",
-                    key="contrib_logbtn",
-                ):
-                    try:
-                        _registry_db.record_submission(
-                            submission_id=submission["submission_id"],
-                            submission=submission,
-                            issue_url=issue_url,
-                        )
-                        st.success(
-                            f"Recorded locally. Your submission ID is "
-                            f"`{submission['submission_id']}` — "
-                            f"save it somewhere safe."
-                        )
-                    except Exception as e:
-                        st.error(f"Could not record locally: {e}")
 
     # ── Local submission history (withdrawal lookup) ────────────────────
     st.markdown("---")

@@ -654,6 +654,15 @@ def _validate_user_input(ui: SubmissionInput) -> dict[str, Any]:
             )
         # Strip surrounding whitespace; PHI scan will handle anything wild.
         iname = iname.strip()
+        # B1: Block non-ASCII letters in intervention_name (free-text PHI
+        # risk via Unicode homoglyphs — e.g. Cyrillic lookalikes).
+        # Spaces and hyphens are allowed; everything else must be ASCII.
+        if iname and not all(ord(c) < 128 or c in " -" for c in iname):
+            raise BuildError(
+                "intervention_name contains non-ASCII characters. "
+                "For privacy reasons free-text fields must be ASCII-only. "
+                "Use a transliterated form."
+            )
         if ikind not in _schema.INTERVENTION_RECORD_KINDS:
             raise BuildError(
                 f"intervention_record_kind {ikind!r} not in "
