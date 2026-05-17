@@ -361,6 +361,237 @@ def build_doctor_pdf(
                 # skip silently — partial PDF better than crash
                 pass
 
+    # ─── v0.17.0: Pattern Recognition section ───────────────────────────
+    pr = findings.get("pattern_recognition")
+    if pr and isinstance(pr, dict) and pr.get("spike_topography_pattern"):
+        story.append(Paragraph("Pattern Recognition (v0.17.0)", st["h2"]))
+
+        topo_pr = pr.get("topography", {})
+        sleep_pr = pr.get("sleep_activation", {})
+        morph_pr = pr.get("morphology_subtypes", {})
+        ct_pr = pr.get("ct_sleep_cooccurrence", {})
+
+        rows = [
+            ("Topography pattern", str(pr.get("spike_topography_pattern", "—"))),
+            ("Classification confidence", str(topo_pr.get("classification_confidence", "—"))),
+            ("Asymmetry index (R-L)/(R+L)", f"{topo_pr.get('asymmetry_index', 0):.3f}"),
+            ("Lateralization significant (>0.10)", str(topo_pr.get("lateralization_significant", False))),
+            ("Regional kurtosis — CT",
+             f"{topo_pr.get('regional_rates', {}).get('centro_temporal', 0):.2f}"),
+            ("Regional kurtosis — Frontal",
+             f"{topo_pr.get('regional_rates', {}).get('frontal', 0):.2f}"),
+            ("Regional kurtosis — Parietal/Occipital",
+             f"{topo_pr.get('regional_rates', {}).get('parietal_occipital', 0):.2f}"),
+        ]
+        top5 = topo_pr.get("top_5_channels", [])
+        if top5:
+            top5_str = ", ".join(
+                f"{c.get('name','?')} ({c.get('kurtosis',0):.1f})"
+                for c in top5[:5]
+            )
+            rows.append(("Top-5 channels (kurtosis)", top5_str))
+        story.append(_kv_table(rows))
+
+        # Morphology subtypes
+        story.append(Paragraph("Spike Morphology Sub-classification", st["h2"]))
+        rows_m = [
+            ("Total events", str(morph_pr.get("n_total", "—"))),
+            ("Short spikes <70ms", str(morph_pr.get("n_spike_short", "—"))),
+            ("Sharp waves 70–200ms", str(morph_pr.get("n_sharp", "—"))),
+            ("Spike-wave complex ≥200ms", str(morph_pr.get("n_sharp_wave_complex", "—"))),
+            ("Polyspike count (est.)", str(morph_pr.get("n_polyspike", "—"))),
+            ("Polyspike fraction (%)", f"{morph_pr.get('pct_polyspike', 0):.1f}%"),
+            ("Morphology interpretation", str(morph_pr.get("interpretation", "—"))),
+        ]
+        story.append(_kv_table(rows_m))
+
+        # Sleep activation
+        story.append(Paragraph("Sleep Activation Classification", st["h2"]))
+        rows_s = [
+            ("Wake spike rate (/min)", f"{sleep_pr.get('wake_rate_per_min', 0):.2f}"),
+            ("NREM spike rate (/min)", f"{sleep_pr.get('nrem_rate_per_min', 0):.2f}"),
+            ("REM spike rate (/min)", f"{sleep_pr.get('rem_rate_per_min', 0):.2f}"),
+            ("Activation ratio (NREM/Wake)", f"{sleep_pr.get('activation_ratio', 0):.3f}"),
+            ("Classification", str(sleep_pr.get("classification", "—"))),
+            ("CSWS risk score (0–1)", f"{sleep_pr.get('csws_risk_score', 0):.3f}"),
+        ]
+        if sleep_pr.get("notes"):
+            rows_s.append(("Notes", "; ".join(sleep_pr["notes"])))
+        story.append(_kv_table(rows_s))
+
+        # CT co-occurrence
+        if ct_pr:
+            story.append(Paragraph("Centro-temporal Spike / Sleep Co-occurrence", st["h2"]))
+            rows_ct = [
+                ("Rolandic sleep-activated", str(ct_pr.get("rolandic_sleep_activated", "—"))),
+                ("CT Wake rate (/min)", f"{ct_pr.get('ct_wake_rate', 0):.2f}"),
+                ("CT NREM rate (/min)", f"{ct_pr.get('ct_nrem_rate', 0):.2f}"),
+            ]
+            story.append(_kv_table(rows_ct))
+
+    # ─── v0.17.0: Mechanism-Targeted Findings ───────────────────────────
+    ap = findings.get("aperiodic")
+    ms = findings.get("microstates")
+    sp_v2 = findings.get("spindles")
+
+    if ap or ms or sp_v2:
+        story.append(Paragraph("Mechanism-Targeted Findings (v0.17.0)", st["h2"]))
+
+        if ap and isinstance(ap, dict) and ap.get("chi_by_state"):
+            chi_state = ap.get("chi_by_state", {})
+            ap_rows = [("Aperiodic exponent χ (state)", "Median")]
+            for state_name, state_data in chi_state.items():
+                if isinstance(state_data, dict):
+                    med = state_data.get("median")
+                    if med is not None:
+                        ap_rows.append((f"  χ — {state_name}", f"{med:.3f}"))
+            if len(ap_rows) > 1:
+                story.append(_kv_table(ap_rows[1:]))
+            # Pediatric norm z-scores
+            pnz = ap.get("pediatric_norm_z_scores") or {}
+            if pnz:
+                story.append(Paragraph(
+                    "Aperiodic χ z-scores vs pediatric norms: " +
+                    ", ".join(f"{k}={v:.2f}" for k, v in pnz.items() if v is not None),
+                    st["body"],
+                ))
+
+        if ms and isinstance(ms, dict) and ms.get("coverage_pct"):
+            cov = ms["coverage_pct"]
+            cov_str = ", ".join(f"{k}: {v:.0f}%" for k, v in sorted(cov.items()))
+            story.append(Paragraph(f"Microstates A–D: {cov_str}", st["body"]))
+            dom = ms.get("dominant_microstate")
+            if dom == "D":
+                story.append(Paragraph(
+                    "⚠ Microstate D dominant — Aufmerksamkeits/Salienz-Netzwerk-Imbalanz",
+                    st["warning"],
+                ))
+
+        if sp_v2 and isinstance(sp_v2, dict) and sp_v2.get("interpretation") == "below":
+            story.append(Paragraph(
+                f"⚠ Spindel-Dichte stark reduziert: "
+                f"{sp_v2.get('density_per_minute', 0):.2f}/min "
+                f"(Norm {sp_v2.get('age_normative_range', (0.8,1.5))[0]}–"
+                f"{sp_v2.get('age_normative_range', (0.8,1.5))[1]}/min) — "
+                "KCNQ3-mechanistisches Korrelat",
+                st["warning"],
+            ))
+
+    # ─── v0.17.0: KCNQ3-specific section (if variant contains KCNQ3) ────
+    if variant and "KCNQ3" in str(variant).upper():
+        story.append(Paragraph(f"KCNQ3-spezifische Befunde — {variant}", st["h2"]))
+
+        # Sands 2019 comparison table
+        swi_k = findings.get("swi") or {}
+        state_k = findings.get("state_split") or {}
+        sp_k = findings.get("spindles") or {}
+        pr_k = findings.get("pattern_recognition") or {}
+        topo_k = pr_k.get("topography") or {}
+        sleep_k = pr_k.get("sleep_activation") or {}
+
+        csws_k = bool(swi_k.get("csws_criterion_met", False))
+        act_r_k = float(sleep_k.get("activation_ratio", 0.0))
+        sp_dens_k = float(sp_k.get("density_per_minute", 0.0) or 0.0)
+        sp_interp_k = sp_k.get("interpretation", "")
+        topo_pat_k = pr_k.get("spike_topography_pattern", "—")
+        csws_risk_k = float(pr_k.get("csws_risk_score", 0.0))
+
+        kcnq3_rows = [
+            ("Befund", "Dieser Patient", "Sands 2019 Erwartung (KCNQ3-GoF)"),
+            (
+                "CSWS-Kriterium",
+                "ERFÜLLT" if csws_k else "NICHT erfüllt ✓",
+                "60% der Kohorte betroffen",
+            ),
+            (
+                "Schlaf-Aktivierungsratio",
+                f"{act_r_k:.2f}{'  ← atypisch günstig' if act_r_k < 0.7 else ''}",
+                "Moderat–stark erwartet",
+            ),
+            (
+                "Spindel-Dichte",
+                f"{sp_dens_k:.2f}/min {'(reduziert)' if sp_interp_k == 'below' else ''}",
+                "Massiv reduziert (klassisch)",
+            ),
+            (
+                "Topographisches Muster",
+                topo_pat_k,
+                "Multifokal mit CT-Schwerpunkt",
+            ),
+            (
+                "CSWS-Risiko-Score",
+                f"{csws_risk_k:.2f}/1.0",
+                "< 0.3 günstig",
+            ),
+        ]
+
+        kcnq3_tbl = Table(
+            kcnq3_rows,
+            colWidths=(4.5 * cm, 5 * cm, 5.5 * cm),
+        )
+        from reportlab.lib import colors as _colors
+        kcnq3_tbl.setStyle(TableStyle([
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
+            ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
+            ("BACKGROUND", (0, 0), (-1, 0), _colors.HexColor("#D6E4F0")),
+            ("GRID", (0, 0), (-1, -1), 0.25, _colors.lightgrey),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(kcnq3_tbl)
+
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(Paragraph(
+            "<b>Literaturhinweis:</b> Sands TT et al. (2019) KCNQ3 gain-of-function epilepsy "
+            "— CSWS/ESES in ~60%, prominente Schlaf-Aktivierung, stark reduzierte Spindeln. "
+            "PMID 31254974.",
+            st["small"],
+        ))
+
+    # ─── v0.17.0: Clinical Impression V2 ────────────────────────────────
+    imp_v2 = findings.get("clinical_impression_v2")
+    if imp_v2 and isinstance(imp_v2, dict) and imp_v2.get("headline"):
+        story.append(Paragraph("Klinische Einschätzung (strukturiert, v0.17.0)", st["h2"]))
+        story.append(Paragraph(f"<b>{imp_v2['headline']}</b>", st["body"]))
+
+        for kf in imp_v2.get("key_findings", []):
+            story.append(Paragraph(f"• {kf}", st["body"]))
+
+        fav = imp_v2.get("favorable_factors", [])
+        if fav:
+            story.append(Paragraph("<b>Günstige Faktoren:</b>", st["body"]))
+            for f_item in fav:
+                story.append(Paragraph(f"  ✓ {f_item}", st["body"]))
+
+        conc = imp_v2.get("concerning_factors", [])
+        if conc:
+            story.append(Paragraph("<b>Besorgniserregende Faktoren:</b>", st["body"]))
+            for c_item in conc:
+                story.append(Paragraph(f"  ⚠ {c_item}", st["warning"]))
+
+    # ─── v0.17.0: Tracking Recommendations ─────────────────────────────
+    story.append(Paragraph("Follow-up Biomarker (v0.17.0)", st["h2"]))
+    tracking_rows = [
+        ("Priorität", "Biomarker", "Empfohlenes Intervall"),
+        ("1 (höchste)", "Spindel-Dichte (/min)", "3–6 Monate"),
+        ("2", "N3 Spike-Wave Index (%)", "3–6 Monate"),
+        ("3", "Aperiodic Exponent χ", "6–12 Monate"),
+        ("4", "Microstate D Coverage (%)", "6–12 Monate"),
+        ("5", "Topographic Spike Rate (top channel, /min)", "3–6 Monate"),
+    ]
+    track_tbl = Table(tracking_rows, colWidths=(3 * cm, 7 * cm, 4 * cm))
+    track_tbl.setStyle(TableStyle([
+        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
+        ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8EEF5")),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.lightgrey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(track_tbl)
+
     # ─── v0.5: Methods section ───────────────────────────────────────────
     story.append(PageBreak())
     story.append(Paragraph("Methods", st["h2"]))

@@ -50,7 +50,9 @@ from .analyses.coupling import compute_so_spindle_coupling, summarize_so_spindle
 from .analyses.ied_ml import compute_ied_ml, summarize_ied_ml
 from .analyses.aperiodic import compute_aperiodic_exponent, summarize_aperiodic
 from .analyses.microstates import compute_microstates, summarize_microstates
+from .analyses.patterns import run_pattern_recognition, summarize_pattern_recognition
 from .clinical.impression import build_impression, build_recommendations
+from .clinical.impression_v2 import build_impression_v2, summarize_impression_v2
 from .clinical.negative_findings import build_negative_findings
 from .utils.sanitize import safe_round_dict
 
@@ -313,7 +315,15 @@ def run_all_analyses(
         findings["microstates"] = {"available": False, "error": str(e)}
         findings.setdefault("errors", {})["microstates"] = str(e)
 
-    # --- 12. Clinical impression + recommendations (v0.6) ---
+    # --- 11h. Pattern recognition (v0.17.0) ---
+    try:
+        pr = run_pattern_recognition(findings, age_years=age_years)
+        findings["pattern_recognition"] = summarize_pattern_recognition(pr)
+    except Exception as e:
+        findings["pattern_recognition"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["pattern_recognition"] = str(e)
+
+    # --- 12. Clinical impression + recommendations (v0.6 + v0.17.0) ---
     # Built from all preceding findings; deterministic, no LLM.
     try:
         from .insights import build_narrative
@@ -325,6 +335,17 @@ def run_all_analyses(
         )
     except Exception as e:
         errors["clinical_impression"] = str(e)
+
+    # v0.17.0: structured impression v2 (includes pattern recognition)
+    try:
+        imp_v2 = build_impression_v2(
+            findings,
+            pattern_recognition=findings.get("pattern_recognition"),
+        )
+        findings["clinical_impression_v2"] = summarize_impression_v2(imp_v2)
+    except Exception as e:
+        findings["clinical_impression_v2"] = {"available": False, "error": str(e)}
+        errors["clinical_impression_v2"] = str(e)
 
     # --- 13. Negative findings (v0.7) ---
     # What was checked and not found — clinically informative.

@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-SCHEMA_VERSION = 2  # v0.16.0 fields are additive; schema stays at v2
+SCHEMA_VERSION = 2  # v0.17.0 fields are additive; schema stays at v2
 
 
 # ─── Controlled vocabularies ────────────────────────────────────────────────
@@ -203,6 +203,37 @@ PDR_ASYMMETRY_BUCKETS: tuple[str, ...] = (
 
 # Dominant microstate
 MICROSTATE_DOMINANT_VALUES: frozenset[str] = frozenset({"A", "B", "C", "D"})
+
+
+# ─── Schema v2 additions (v0.17.0 — additive) ───────────────────────────────
+
+# Spike topography classification pattern
+SPIKE_TOPOGRAPHY_PATTERNS: frozenset[str] = frozenset({
+    "centro_temporal_BCECTS",
+    "multifocal",
+    "generalized",
+    "frontal_dominant",
+    "occipital_dominant",
+    "lateralized_right",
+    "lateralized_left",
+    "indeterminate",
+})
+
+# Polyspike percentage bucket (encephalopathy marker)
+SPIKE_POLYSPIKE_PCT_BUCKETS: tuple[str, ...] = ("0", "<5", "5-20", "20-50", ">50")
+
+# Sleep activation classification
+SLEEP_ACTIVATION_CLASSIFICATIONS: frozenset[str] = frozenset({
+    "wake_dominant_atypical",
+    "no_activation",
+    "mild_activation",
+    "moderate_activation",
+    "strong_activation_eses_risk",
+    "indeterminate",
+})
+
+# CSWS risk score coarse bucket
+CSWS_RISK_SCORE_BUCKETS: tuple[str, ...] = ("<0.2", "0.2-0.4", "0.4-0.6", "0.6-0.8", ">0.8")
 
 
 @dataclass(frozen=True)

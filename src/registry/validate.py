@@ -235,6 +235,19 @@ def _validate_findings(f: Any) -> list[str]:
         "microstate_dominant": (
             lambda v: v in _schema.MICROSTATE_DOMINANT_VALUES
         ),
+        # v0.17.0 — Pattern recognition (all optional, additive)
+        "spike_topography_pattern": (
+            lambda v: v in _schema.SPIKE_TOPOGRAPHY_PATTERNS
+        ),
+        "spike_morphology_polyspike_pct_bucket": (
+            lambda v: v in _schema.SPIKE_POLYSPIKE_PCT_BUCKETS
+        ),
+        "sleep_activation_classification": (
+            lambda v: v in _schema.SLEEP_ACTIVATION_CLASSIFICATIONS
+        ),
+        "csws_risk_score_bucket": (
+            lambda v: v in _schema.CSWS_RISK_SCORE_BUCKETS
+        ),
     }
 
     # Keys handled by dedicated sub-validators (excluded from unknown-key check)

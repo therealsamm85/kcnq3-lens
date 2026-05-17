@@ -425,6 +425,53 @@ def _extract_microstate_dominant(f: dict) -> str | None:
     return None
 
 
+def _extract_spike_topography_pattern(f: dict) -> str | None:
+    """Extract spike topography pattern. (v0.17.0)"""
+    pr = f.get("pattern_recognition") if isinstance(f, dict) else None
+    if not isinstance(pr, dict):
+        return None
+    v = pr.get("spike_topography_pattern")
+    if v in _schema.SPIKE_TOPOGRAPHY_PATTERNS:
+        return str(v)
+    return None
+
+
+def _extract_spike_polyspike_pct_bucket(f: dict) -> str | None:
+    """Extract polyspike percentage bucket. (v0.17.0)"""
+    pr = f.get("pattern_recognition") if isinstance(f, dict) else None
+    if not isinstance(pr, dict):
+        return None
+    morph = pr.get("morphology_subtypes")
+    if not isinstance(morph, dict):
+        return None
+    pct = morph.get("pct_polyspike")
+    if pct is None or not _schema._is_nonneg_finite(pct):
+        return None
+    return _buckets.bucket_spike_polyspike_pct(float(pct))
+
+
+def _extract_sleep_activation_classification(f: dict) -> str | None:
+    """Extract sleep activation classification. (v0.17.0)"""
+    pr = f.get("pattern_recognition") if isinstance(f, dict) else None
+    if not isinstance(pr, dict):
+        return None
+    v = pr.get("sleep_activation_classification")
+    if v in _schema.SLEEP_ACTIVATION_CLASSIFICATIONS:
+        return str(v)
+    return None
+
+
+def _extract_csws_risk_score_bucket(f: dict) -> str | None:
+    """Extract CSWS risk score bucket. (v0.17.0)"""
+    pr = f.get("pattern_recognition") if isinstance(f, dict) else None
+    if not isinstance(pr, dict):
+        return None
+    score = pr.get("csws_risk_score")
+    if score is None or not _schema._is_nonneg_finite(score):
+        return None
+    return _buckets.bucket_csws_risk_score(float(score))
+
+
 def _extract_hfo_pct_on_spike_bucket(f: dict) -> str | None:
     hfo = f.get("hfo_ripples") if isinstance(f, dict) else None
     if not isinstance(hfo, dict):
@@ -490,6 +537,11 @@ _EXTRACTORS_V2_ADDITIONAL: dict[str, Callable[[dict], Any]] = {
     "aperiodic_chi_n2_bucket": _extract_aperiodic_chi_n2_bucket,
     "pdr_asymmetry_bucket": _extract_pdr_asymmetry_bucket,
     "microstate_dominant": _extract_microstate_dominant,
+    # v0.17.0 — Pattern recognition (all optional, additive)
+    "spike_topography_pattern": _extract_spike_topography_pattern,
+    "spike_morphology_polyspike_pct_bucket": _extract_spike_polyspike_pct_bucket,
+    "sleep_activation_classification": _extract_sleep_activation_classification,
+    "csws_risk_score_bucket": _extract_csws_risk_score_bucket,
 }
 
 # Default extractors (v2)

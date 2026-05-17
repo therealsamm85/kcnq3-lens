@@ -361,6 +361,51 @@ def bucket_pdr_asymmetry(asymmetry_interpretation: str | None) -> str | None:
     return _MAP.get(str(asymmetry_interpretation))
 
 
+# ─── v0.17.0 bucket helpers ───────────────────────────────────────────────────
+
+
+def bucket_spike_polyspike_pct(pct: float | None) -> str | None:
+    """Map polyspike percentage to schema.SPIKE_POLYSPIKE_PCT_BUCKETS."""
+    if pct is None:
+        return None
+    try:
+        v = float(pct)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v < 0:
+        return None
+    if v == 0.0:
+        return "0"
+    if v < 5.0:
+        return "<5"
+    if v < 20.0:
+        return "5-20"
+    if v < 50.0:
+        return "20-50"
+    return ">50"
+
+
+def bucket_csws_risk_score(score: float | None) -> str | None:
+    """Map CSWS risk score (0–1) to schema.CSWS_RISK_SCORE_BUCKETS."""
+    if score is None:
+        return None
+    try:
+        v = float(score)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v < 0:
+        return None
+    if v < 0.2:
+        return "<0.2"
+    if v < 0.4:
+        return "0.2-0.4"
+    if v < 0.6:
+        return "0.4-0.6"
+    if v < 0.8:
+        return "0.6-0.8"
+    return ">0.8"
+
+
 # Re-exports for convenience.
 AGE_BUCKETS = _schema.AGE_BUCKETS
 DURATION_BUCKETS = _schema.DURATION_BUCKETS
