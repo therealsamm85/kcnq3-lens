@@ -128,13 +128,25 @@ def run_all_analyses(
     _emit("spindles", 0.50)
 
     # --- 3. Background ---
+    # v0.18.3 guard: when the wake window is too small to produce a
+    # meaningful PDR estimate, fall back to compute_background_power's
+    # default selection (first 5-15% + last 85-95% of recording). The
+    # caller-supplied indices win when the window is adequate.
+    _MIN_WAKE_EPOCHS = 4  # 4 × 30s = 2 minutes — minimum for stable PSD
+    wake_for_bg = wake_epoch_indices
+    if not wake_for_bg or len(wake_for_bg) < _MIN_WAKE_EPOCHS:
+        wake_for_bg = None  # let compute_background_power pick its default
     try:
         bg = compute_background_power(
             rec,
-            wake_epoch_indices=wake_epoch_indices,
+            wake_epoch_indices=wake_for_bg,
             age_years=age_years,
         )
         findings["background"] = summarize_background(bg)
+        if wake_for_bg is None:
+            findings["background"]["wake_window_source"] = (
+                "auto_fallback_first_last_10pct"
+            )
     except Exception as e:
         errors["background"] = str(e)
     _emit("background", 0.70)

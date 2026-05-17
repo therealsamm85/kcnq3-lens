@@ -58,6 +58,77 @@ def is_nihon_kohden(path: Path) -> bool:
         return False
 
 
+def _read_via_mne(path: Path) -> EEGRecording | None:
+    """Try MNE-Python's read_raw_nihon. Returns None if MNE can't parse.
+
+    MNE-Python correctly handles per-file sample rate, gain calibration
+    (returns volts → we convert to µV), and channel naming for the
+    "modern" Nihon Kohden file layout used by short routine recordings.
+    It does NOT handle the long-form (multi-hour) variant that ships with
+    only the second control block at 0x1F80; for those we fall back to
+    the reverse-engineered reader below. v0.18.3.
+    """
+    try:
+        import mne
+    except ImportError:
+        return None
+    try:
+        mne.set_log_level("WARNING")
+        raw = mne.io.read_raw_nihon(str(path), preload=True)
+    except Exception:
+        return None
+    # Sanity-check: MNE sometimes "succeeds" on the long-form variant but
+    # returns a 1-second, 1-channel stub (header parsing breaks). Reject
+    # that and fall back to the custom reader.
+    if raw.n_times < int(raw.info["sfreq"] * 30) or len(raw.ch_names) < 5:
+        return None
+
+    sfreq = float(raw.info["sfreq"])
+    channel_names = list(raw.ch_names)
+    n_channels_in_file = len(channel_names)
+    duration_s = float(raw.times[-1])
+
+    # MNE returns volts; multiply by 1e6 → µV (matches our pipeline).
+    data_uv = (raw.get_data() * 1e6).astype(np.float32)
+
+    # Filter to standard 10-20 channels for the EEG-only subset, matching
+    # the custom-reader behaviour. Case-insensitive (NK files may use
+    # "Fp1" or "FP1" depending on the device firmware).
+    upper = {n.upper() for n in _STANDARD_EEG_NAMES}
+    eeg_channel_indices = [
+        i for i, n in enumerate(channel_names)
+        if n.upper() in upper
+    ]
+
+    # Recording start time
+    start_datetime = None
+    tz_stripped = False
+    meas_date = raw.info.get("meas_date")
+    if meas_date is not None:
+        try:
+            had_tz = getattr(meas_date, "tzinfo", None) is not None
+            if hasattr(meas_date, "replace"):
+                start_datetime = meas_date.replace(tzinfo=None)
+            tz_stripped = bool(had_tz)
+        except Exception:
+            start_datetime = None
+
+    rec = EEGRecording(
+        path=path,
+        sfreq=sfreq,
+        n_channels=len(eeg_channel_indices),
+        duration_s=duration_s,
+        channel_names=channel_names,
+        n_channels_in_file=n_channels_in_file,
+        eeg_channel_indices=eeg_channel_indices,
+        format_name="Nihon Kohden (via MNE)",
+        start_datetime=start_datetime,
+        start_datetime_tz_stripped=tz_stripped,
+    )
+    rec._full_data = data_uv
+    return rec
+
+
 def read_nihon_kohden(
     path: Path,
     sfreq: float | None = None,
@@ -68,22 +139,32 @@ def read_nihon_kohden(
 ) -> EEGRecording:
     """Read a Nihon Kohden EEG-1200A file and return an EEGRecording.
 
+    Strategy: try MNE-Python's read_raw_nihon first (correct µV gain,
+    per-file sample rate, real channel names). If MNE can't parse the
+    file — which happens for the long-form recording variant — fall
+    back to the reverse-engineered reader below.
+
     Parameters
     ----------
     path : Path
         Path to the .EEG file.
-    sfreq : float, optional
-        Sampling rate. Defaults to 200 Hz (standard for long-term overnight).
-    n_channels : int, optional
-        Channels per time-point in file. Defaults to 29 (28 EEG + 1 marker).
-    channel_names : list[str], optional
-        Channel names in file order. Defaults to standard EEG-1200A layout.
-    data_start : int, optional
-        Byte offset where waveform data begins. Defaults to 0x38E3.
-    duration_s : float, optional
-        Recording duration in seconds. Auto-inferred from file size if not given.
+    sfreq, n_channels, channel_names, data_start, duration_s :
+        Manual overrides for the reverse-engineered fallback reader.
+        When any of these is supplied we skip the MNE attempt and use
+        the explicit parameters (preserves the original API for
+        recordings the user knows MNE can't handle).
     """
     path = Path(path)
+
+    # When no manual overrides are given, try MNE first. MNE delivers
+    # correct µV scaling so downstream YASA-based analyses work.
+    if all(p is None for p in (sfreq, n_channels, channel_names,
+                                data_start, duration_s)):
+        rec = _read_via_mne(path)
+        if rec is not None:
+            return rec
+
+
     sfreq = sfreq or _DEFAULT_SFREQ
     n_channels = n_channels or _DEFAULT_N_CH_FILE
     channel_names = channel_names or _DEFAULT_CH_NAMES_29[:n_channels]

@@ -28,3 +28,10 @@ Thumbs.db
 # Session state (per-developer, not for sharing)
 # Comment out the next line if you DO want session/ tracked
 # data/_session/
+
+# Local report generation output — patient-derived numerical findings.
+# Regenerable from source EEG via `scripts/regenerate_reports.py`.
+data/_reports/
+
+# Local venv (created for batch report regeneration)
+.venv/
