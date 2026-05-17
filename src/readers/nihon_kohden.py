@@ -104,6 +104,11 @@ def read_nihon_kohden(
     except Exception:
         start_datetime = None
 
+    # v0.14.3 H3: plausibility check — reject obviously bogus year values
+    if start_datetime is not None:
+        if not (1990 <= start_datetime.year <= 2030):
+            start_datetime = None
+
     file_size = path.stat().st_size
     data_bytes = file_size - data_start
     bytes_per_sample = 2  # int16

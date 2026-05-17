@@ -32,6 +32,10 @@ class EEGRecording:
     bytes_per_sample: int = 2
     is_offset_binary: bool = False
     start_datetime: datetime.datetime | None = None
+    # v0.14.3 H4: True when reader stripped a non-None tzinfo from meas_date.
+    # UI can surface this as "UTC-normalized" so clock times aren't taken
+    # to be local-tz exact.
+    start_datetime_tz_stripped: bool = False
     _read_epoch_fn: callable = field(default=None, repr=False)
     _full_data: np.ndarray | None = field(default=None, repr=False)
 

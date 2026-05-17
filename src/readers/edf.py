@@ -77,14 +77,17 @@ def read_edf(path: Path) -> EEGRecording:
     # Extract recording start time from MNE's meas_date (timezone-aware or None)
     import datetime as _dt
     start_datetime = None
+    tz_stripped = False
     meas_date = raw.info.get("meas_date")
     if meas_date is not None:
         try:
-            # meas_date may be a timezone-aware datetime; strip tz for uniformity
+            had_tz = getattr(meas_date, "tzinfo", None) is not None
             if hasattr(meas_date, "replace"):
                 start_datetime = meas_date.replace(tzinfo=None)
+            tz_stripped = bool(had_tz)
         except Exception:
             start_datetime = None
+            tz_stripped = False
 
     rec = EEGRecording(
         path=path,
@@ -96,6 +99,7 @@ def read_edf(path: Path) -> EEGRecording:
         eeg_channel_indices=eeg_channel_indices,
         format_name=f"EDF / {ext.lstrip('.').upper()}",
         start_datetime=start_datetime,
+        start_datetime_tz_stripped=tz_stripped,
     )
     rec._full_data = data_uv.astype(np.float32)
     return rec

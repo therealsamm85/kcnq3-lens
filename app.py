@@ -202,6 +202,22 @@ if _rec_for_ad is not None:
             with st.sidebar:
                 with st.spinner("Detecting..."):
                     sw = detect_sleep_window(_rec_for_ad)
+            # v0.14.3 H5: For low-confidence or unsafe-to-apply results, stash
+            # to a pending slot and show preview + explicit Apply/Discard buttons
+            # below. For confident, safe results, apply immediately as before.
+            _should_preview = (sw.confidence == "low") or (not sw.apply_safe)
+            if _should_preview:
+                st.session_state["pending_sleep_window"] = {
+                    "sleep_start_hours": sw.sleep_start_hours,
+                    "sleep_end_hours": sw.sleep_end_hours,
+                    "duration_hours": sw.sleep_duration_hours,
+                    "confidence": sw.confidence,
+                    "notes": list(sw.notes),
+                    "apply_safe": sw.apply_safe,
+                    "acclim_end_hours": sw.acclimatization_end_hours,
+                }
+                st.sidebar.warning(T("auto_detect_low_conf"))
+                st.rerun()
             st.session_state.sleep_start_default = int(sw.sleep_start_hours * 3600)
             st.session_state.sleep_end_default = int(sw.sleep_end_hours * 3600)
             # Wake window: use the first 60 minutes before the detected sleep
@@ -252,6 +268,38 @@ if _rec_for_ad is not None:
             st.rerun()
         except Exception as e:
             st.sidebar.error(T("auto_detect_failed", error=str(e)))
+
+    # v0.14.3 H5: Pending preview (low-conf or unsafe result)
+    _pending = st.session_state.get("pending_sleep_window")
+    if _pending:
+        _ps = _pending["sleep_start_hours"]
+        _pe = _pending["sleep_end_hours"]
+        _clock_s = _rec_for_ad.time_at_hour(_ps)
+        _clock_e = _rec_for_ad.time_at_hour(_pe)
+        _msg = (
+            f"Preview: sleep h{_ps:.2f}–h{_pe:.2f} "
+            f"({_pending['duration_hours']:.1f}h, confidence={_pending['confidence']})"
+        )
+        if _clock_s and _clock_e:
+            _msg += f"\nClock: {_clock_s} → {_clock_e}"
+        if _pending.get("notes"):
+            _msg += f"\nNotes: {', '.join(_pending['notes'])}"
+        st.sidebar.warning(_msg)
+        _c1, _c2 = st.sidebar.columns(2)
+        if _c1.button("✓ Apply", key="apply_pending_sw"):
+            st.session_state.sleep_start_default = int(_ps * 3600)
+            st.session_state.sleep_end_default = int(_pe * 3600)
+            wake_start = max(0, int((_ps - 1.5) * 3600))
+            wake_end = max(wake_start + 600, int((_ps - 0.5) * 3600))
+            st.session_state.wake_start_default = wake_start
+            st.session_state.wake_end_default = wake_end
+            if _pending.get("acclim_end_hours") is not None:
+                st.session_state["acclim_end_hours"] = _pending["acclim_end_hours"]
+            del st.session_state["pending_sleep_window"]
+            st.rerun()
+        if _c2.button("✗ Discard", key="discard_pending_sw"):
+            del st.session_state["pending_sleep_window"]
+            st.rerun()
 
 
 # ─── Sidebar: AI provider settings ──────────────────────────────────────────
@@ -847,6 +895,25 @@ def _run_analyses_with_progress(rec, label: str = ""):
         progress_callback=_cb,
     )
 
+    # v0.14.3 H6: If acclim_end_hours was flagged + the staging result is in
+    # findings, relabel the first N epochs as 'W' to correct YASA's known
+    # quiet-wake → N3 misclassification.
+    _acclim_h = st.session_state.get("acclim_end_hours")
+    if _acclim_h is not None:
+        try:
+            from src.analyses.sleep_stages import relabel_acclimatization_as_wake
+            _stages = (findings or {}).get("sleep_stages")
+            if _stages and "epoch_labels" in _stages:
+                acclim_eps = int(float(_acclim_h) * 3600 / 30)
+                _stages["epoch_labels"] = relabel_acclimatization_as_wake(
+                    _stages["epoch_labels"], acclim_eps,
+                )
+                _stages.setdefault("notes", []).append(
+                    f"first {acclim_eps} epochs relabeled to W (acclimatization)"
+                )
+        except Exception:
+            pass
+
     status.text(T("progress_done"))
     return findings
 
@@ -949,6 +1016,11 @@ if mode == "quickstart":
             except Exception as e:
                 st.error(f"Could not read the file: {e}")
                 qs_rec = None
+
+    # v0.14.3 H7: all-day banner in quickstart mode
+    if qs_rec is not None and qs_rec.duration_s > 16 * 3600:
+        if st.session_state.get("acclim_end_hours") is None:
+            st.warning(T("allday_recording_banner"))
 
     # ── Step 3 — Run analysis ────────────────────────────────────────────
     st.markdown("---")
@@ -1884,6 +1956,13 @@ else:
         rec_pre = _file_uploader_section("pre", "step1_header_pre")
     with col_post:
         rec_post = _file_uploader_section("post", "step1_header_post")
+
+    # v0.14.3 H7: all-day banner in compare mode (either recording)
+    for _r in (rec_pre, rec_post):
+        if _r is not None and _r.duration_s > 16 * 3600:
+            if st.session_state.get("acclim_end_hours") is None:
+                st.warning(T("allday_recording_banner"))
+            break
 
     st.header(T("step2_header_compare"))
     if rec_pre is None or rec_post is None:
