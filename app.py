@@ -88,6 +88,7 @@ _MODE_LABELS = {
     "single": T("mode_single"),
     "compare": T("mode_compare"),
     "longitudinal": "🗓️ Longitudinal history",
+    "longitudinal_compare": "📊 Compare over time",
     "contribute": "🌍 Contribute to registry",
 }
 mode = st.sidebar.radio(
@@ -1630,6 +1631,224 @@ elif mode == "longitudinal":
         st.write(f"**{len(diary)} diary entries**")
         st.dataframe(pd.DataFrame(diary_to_table(diary)),
                      use_container_width=True, hide_index=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODE E: Compare over time (longitudinal delta)
+# ═══════════════════════════════════════════════════════════════════════════
+elif mode == "longitudinal_compare":
+    from src.comparison.longitudinal import compare_recordings
+    from src.utils.plots import plot_longitudinal_comparison, plot_metric_timeline
+
+    st.header("📊 Compare over time")
+    st.caption(
+        "Select two saved recordings to compare. Works on stored findings — "
+        "no raw EEG file needed. All data stays local."
+    )
+
+    entries = load_longitudinal()
+    if len(entries) < 2:
+        st.info(
+            "You need at least 2 saved recordings to compare. "
+            "Run analyses in **Single recording** mode and save them to history first."
+        )
+    else:
+        # Build display labels
+        entry_labels = [
+            f"{e.recording_date}  —  {e.label or '(no label)'}" for e in entries
+        ]
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown("**Recording A** (earlier / baseline)")
+            idx_a = st.selectbox(
+                "Select recording A",
+                options=range(len(entries)),
+                format_func=lambda i: entry_labels[i],
+                index=0,
+                key="longcmp_idx_a",
+            )
+        with col_b:
+            st.markdown("**Recording B** (later / follow-up)")
+            idx_b = st.selectbox(
+                "Select recording B",
+                options=range(len(entries)),
+                format_func=lambda i: entry_labels[i],
+                index=min(1, len(entries) - 1),
+                key="longcmp_idx_b",
+            )
+
+        entry_a = entries[idx_a]
+        entry_b = entries[idx_b]
+
+        # Optional metadata overrides
+        with st.expander("Recording details (optional — helps confound detection)"):
+            c1, c2 = st.columns(2)
+            with c1:
+                age_a = st.number_input("Age A (years)", value=0.0, min_value=0.0,
+                                        step=0.1, key="longcmp_age_a")
+                condition_a = st.selectbox(
+                    "Condition A",
+                    ["", "routine_wake", "ambulatory_sleep", "all_day"],
+                    key="longcmp_cond_a",
+                )
+            with c2:
+                age_b = st.number_input("Age B (years)", value=0.0, min_value=0.0,
+                                        step=0.1, key="longcmp_age_b")
+                condition_b = st.selectbox(
+                    "Condition B",
+                    ["", "routine_wake", "ambulatory_sleep", "all_day"],
+                    key="longcmp_cond_b",
+                )
+
+        if st.button("🔍 Generate comparison", type="primary",
+                     key="longcmp_run",
+                     disabled=(idx_a == idx_b)):
+            if idx_a == idx_b:
+                st.warning("Please select two different recordings.")
+            else:
+                try:
+                    with st.spinner("Comparing recordings…"):
+                        delta = compare_recordings(
+                            findings_a=entry_a.findings,
+                            findings_b=entry_b.findings,
+                            date_a=entry_a.recording_date,
+                            date_b=entry_b.recording_date,
+                            label_a=entry_a.label or entry_a.recording_date,
+                            label_b=entry_b.label or entry_b.recording_date,
+                            age_a_years=age_a if age_a > 0 else None,
+                            age_b_years=age_b if age_b > 0 else None,
+                            condition_a=condition_a,
+                            condition_b=condition_b,
+                            metadata_a=entry_a.metadata,
+                            metadata_b=entry_b.metadata,
+                        )
+                    st.session_state["longcmp_delta"] = delta
+                except Exception as e:
+                    st.error(f"Comparison failed: {e}")
+
+        if "longcmp_delta" in st.session_state:
+            delta = st.session_state["longcmp_delta"]
+
+            # ── Methodology compatibility warning ──────────────────────────
+            if not delta.duration_compatible:
+                st.warning(
+                    f"**Methodology mismatch detected.**  \n{delta.methodology_warning}"
+                )
+            else:
+                st.success("Recording durations are compatible for direct comparison.")
+
+            # ── Confounds banner ───────────────────────────────────────────
+            if delta.confounds:
+                with st.expander(
+                    f"⚠️ {len(delta.confounds)} methodological confound(s) detected",
+                    expanded=True,
+                ):
+                    for c in delta.confounds:
+                        st.markdown(f"- {c}")
+
+            # ── Main comparison chart ──────────────────────────────────────
+            st.subheader("Channel-level comparison")
+            try:
+                fig = plot_longitudinal_comparison(delta)
+                st.pyplot(fig)
+                plt.close(fig)
+            except Exception as e:
+                st.warning(f"Chart failed: {e}")
+
+            # ── Key metric summary ─────────────────────────────────────────
+            st.subheader("Key metrics")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                pct_val = delta.mean_spike_rate_delta_pct
+                pct_color = "inverse" if pct_val < 0 else "normal"
+                st.metric(
+                    "Mean spike rate",
+                    f"{pct_val:+.1f}%",
+                    delta=f"{pct_val:+.1f}% vs baseline",
+                    delta_color=pct_color,
+                )
+                st.metric("Topographic shift", delta.topographic_shift.replace("_", " "))
+            with col2:
+                pdr_a_str = f"{delta.pdr_a:.1f} Hz" if delta.pdr_a else "n/a"
+                pdr_b_str = f"{delta.pdr_b:.1f} Hz" if delta.pdr_b else "n/a"
+                st.metric("PDR (A)", pdr_a_str)
+                st.metric("PDR (B)", pdr_b_str)
+                if delta.pdr_delta_hz is not None:
+                    st.metric("PDR delta", f"{delta.pdr_delta_hz:+.1f} Hz")
+            with col3:
+                st.metric("Complex SW% (A)", f"{delta.complex_sw_pct_a:.1f}%")
+                st.metric("Complex SW% (B)", f"{delta.complex_sw_pct_b:.1f}%")
+                if delta.spindle_delta_pct is not None:
+                    st.metric("Spindle density delta",
+                              f"{delta.spindle_delta_pct:+.1f}%")
+                else:
+                    st.caption("Spindle comparison: not attempted "
+                               "(sleep <2 h in one or both recordings)")
+
+            # ── Timeline charts ────────────────────────────────────────────
+            if len(entries) >= 2:
+                st.subheader("Metric timeline (all saved recordings)")
+                # Build flat list of metric entries from all recordings
+                from src.longitudinal.trends import build_trends_table
+
+                try:
+                    trends = build_trends_table(entries)
+                    timeline_metrics = [
+                        ("spike_rate_per_min", "Spike rate (/min)"),
+                        ("pdr_hz", "PDR (Hz)"),
+                        ("spindle_density_per_min", "Spindle density (/min)"),
+                    ]
+                    # Extract diary-based interventions
+                    interventions_for_plot = []
+                    diary_all = load_diary()
+                    for de in diary_all:
+                        if de.medication_change:
+                            interventions_for_plot.append({
+                                "date": de.date,
+                                "label": de.medication_change,
+                            })
+                    t_cols = st.columns(len(timeline_metrics))
+                    for i, (metric_key, metric_label) in enumerate(timeline_metrics):
+                        with t_cols[i]:
+                            try:
+                                fig2 = plot_metric_timeline(
+                                    entries=trends,
+                                    metric=metric_key,
+                                    interventions=interventions_for_plot or None,
+                                    title=metric_label,
+                                    ylabel=metric_label,
+                                )
+                                st.pyplot(fig2)
+                                plt.close(fig2)
+                            except Exception as e2:
+                                st.caption(f"{metric_label}: {e2}")
+                except Exception as e:
+                    st.caption(f"Timeline charts failed: {e}")
+
+            # ── Honest framing: what we can / cannot conclude ──────────────
+            st.subheader("What we can and cannot conclude")
+            for hint in delta.interpretation_hints:
+                st.markdown(f"- {hint}")
+
+            if not delta.interpretation_hints:
+                st.info("No interpretation hints generated.")
+
+            # ── Suggested next steps ───────────────────────────────────────
+            with st.expander("Suggested next steps", expanded=False):
+                st.markdown(
+                    "- **Repeat with matched methodology**: for a definitive "
+                    "comparison, use the same EEG type (routine vs ambulatory), "
+                    "same time of day, and similar recording duration.\n"
+                    "- **Correlate with development diary**: use the 🗓️ diary "
+                    "to log words, milestones, and medication changes on the same "
+                    "timeline as EEG metrics.\n"
+                    "- **Share with neurologist**: this output is a quantitative "
+                    "summary, not a clinical report. Bring it to your next appointment "
+                    "as a discussion aid.\n"
+                    "- **Contribute to registry**: anonymized data from multiple "
+                    "KCNQ3 children on the same intervention helps researchers. "
+                    "See 🌍 **Contribute** mode."
+                )
 
 
 # ═══════════════════════════════════════════════════════════════════════════

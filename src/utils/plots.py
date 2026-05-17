@@ -284,6 +284,214 @@ def plot_eeg_trace_with_events(
     return fig
 
 
+def plot_longitudinal_comparison(delta) -> "plt.Figure":
+    """Three-panel longitudinal comparison figure.
+
+    Top-left : per-channel spike-rate bar chart (A vs B side by side).
+    Top-right: scatter plot (A on x-axis, B on y-axis) with identity line.
+    Bottom   : summary text block with key metric deltas.
+
+    Parameters
+    ----------
+    delta : LongitudinalDelta
+        Output of ``compare_recordings``.
+    """
+    from matplotlib.gridspec import GridSpec
+
+    fig = plt.figure(figsize=(14, 9))
+    gs = GridSpec(2, 2, figure=fig, height_ratios=[3, 1], hspace=0.45, wspace=0.35)
+    ax_bar = fig.add_subplot(gs[0, 0])
+    ax_scatter = fig.add_subplot(gs[0, 1])
+    ax_text = fig.add_subplot(gs[1, :])
+
+    label_a = delta.recording_a.get("label") or delta.recording_a.get("date") or "A"
+    label_b = delta.recording_b.get("label") or delta.recording_b.get("date") or "B"
+
+    # ── Top-left: per-channel bar chart ──────────────────────────────────────
+    channels = sorted(delta.spike_rate_per_channel.keys())
+    # Limit to 20 channels for readability
+    if len(channels) > 20:
+        # Show only channels with any activity
+        channels = sorted(
+            channels,
+            key=lambda c: -(delta.spike_rate_per_channel[c][0]
+                            + delta.spike_rate_per_channel[c][1]),
+        )[:20]
+        channels = sorted(channels)
+
+    rates_a = [delta.spike_rate_per_channel[c][0] for c in channels]
+    rates_b = [delta.spike_rate_per_channel[c][1] for c in channels]
+
+    x = np.arange(len(channels))
+    w = 0.38
+    bar_a = ax_bar.bar(x - w / 2, rates_a, w, label=label_a,
+                       color="#5A8DEE", alpha=0.85)
+    bar_b = ax_bar.bar(x + w / 2, rates_b, w, label=label_b,
+                       color="#EE8D5A", alpha=0.85)
+    ax_bar.set_xticks(x)
+    ax_bar.set_xticklabels(channels, rotation=60, ha="right", fontsize=7)
+    ax_bar.set_ylabel("Spike index (kurtosis or /min)", fontsize=8)
+    ax_bar.set_title("Per-channel spike burden", fontsize=9)
+    ax_bar.legend(fontsize=8, loc="upper right")
+    ax_bar.grid(True, axis="y", linestyle=":", alpha=0.4)
+
+    # ── Top-right: scatter A vs B ─────────────────────────────────────────────
+    if channels:
+        ax_scatter.scatter(rates_a, rates_b, s=35, color="#444",
+                           alpha=0.7, zorder=3)
+        for ch, ra, rb in zip(channels, rates_a, rates_b):
+            ax_scatter.annotate(ch, (ra, rb), fontsize=6, alpha=0.6,
+                                textcoords="offset points", xytext=(3, 2))
+
+        all_vals = rates_a + rates_b
+        lo, hi = min(all_vals) * 0.9, max(all_vals) * 1.1 if all_vals else (0, 1)
+        if lo == hi:
+            hi = lo + 1
+        ax_scatter.plot([lo, hi], [lo, hi], linestyle="--", color="#AAA",
+                        linewidth=1, label="identity (no change)")
+
+        # Mean change line
+        mean_a = sum(rates_a) / len(rates_a) if rates_a else 0
+        mean_b = sum(rates_b) / len(rates_b) if rates_b else 0
+        ax_scatter.axhline(mean_b, color="#EE8D5A", linewidth=1,
+                           linestyle=":", alpha=0.7)
+        ax_scatter.axvline(mean_a, color="#5A8DEE", linewidth=1,
+                           linestyle=":", alpha=0.7)
+        ax_scatter.legend(fontsize=7)
+
+    ax_scatter.set_xlabel(f"{label_a} spike index", fontsize=8)
+    ax_scatter.set_ylabel(f"{label_b} spike index", fontsize=8)
+    ax_scatter.set_title("Channel-level A vs B", fontsize=9)
+    ax_scatter.grid(True, linestyle=":", alpha=0.3)
+
+    # ── Bottom: summary text ──────────────────────────────────────────────────
+    ax_text.axis("off")
+    delta_str = f"{delta.mean_spike_rate_delta_pct:+.1f}%"
+    pdr_str = (f"{delta.pdr_delta_hz:+.1f} Hz" if delta.pdr_delta_hz is not None
+               else "n/a")
+    spindle_str = (f"{delta.spindle_delta_pct:+.1f}%" if delta.spindle_delta_pct
+                   is not None else "not compared (sleep <2h in one recording)")
+    shift_str = delta.topographic_shift.replace("_", " ")
+    compat_str = "yes" if delta.duration_compatible else "NO (see methodology warning)"
+
+    lines = [
+        f"Mean spike-rate delta: {delta_str}   |   "
+        f"Topographic shift: {shift_str}   |   "
+        f"Duration compatible: {compat_str}",
+        f"PDR delta: {pdr_str}   |   "
+        f"Spindles: {spindle_str}   |   "
+        f"Age delta: {delta.age_delta_years:.2f} yr",
+    ]
+    if delta.confounds:
+        lines.append(f"Confounds: {len(delta.confounds)} detected — see report for details")
+    ax_text.text(0.01, 0.85, "\n".join(lines), transform=ax_text.transAxes,
+                 fontsize=8.5, verticalalignment="top",
+                 fontfamily="monospace",
+                 bbox=dict(boxstyle="round,pad=0.4", facecolor="#F5F5F5",
+                           edgecolor="#CCC"))
+
+    date_a = delta.recording_a.get("date", "")
+    date_b = delta.recording_b.get("date", "")
+    fig.suptitle(
+        f"Longitudinal comparison: {label_a} ({date_a}) → {label_b} ({date_b})",
+        fontsize=11, fontweight="bold", y=0.98,
+    )
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    return fig
+
+
+def plot_metric_timeline(
+    entries: list[dict],
+    metric: str,
+    interventions: list[dict] | None = None,
+    title: str = "",
+    ylabel: str = "",
+    figsize: tuple[float, float] = (11, 4),
+) -> "plt.Figure":
+    """Plot a single metric over multiple recordings, with intervention markers.
+
+    Parameters
+    ----------
+    entries : list of dicts
+        Each dict must have 'date' (YYYY-MM-DD) and the metric key, e.g.:
+        [{"date": "2024-08-01", "mean_spike_rate": 12.3}, ...]
+        Missing values are skipped.
+    metric : str
+        Key to extract from each entry dict.
+    interventions : list of dicts, optional
+        Each dict: {"date": "YYYY-MM-DD", "label": "Supplements started",
+                    "color": "#E07"}   (color optional, defaults cycle)
+    title, ylabel : str
+    """
+    import datetime as _dt
+
+    _INTERVENTION_COLORS = ["#D44", "#4A4", "#44D", "#D94", "#94D", "#D49"]
+
+    points = []
+    for e in entries:
+        val = e.get(metric)
+        date_s = e.get("date") or e.get("recording_date")
+        if val is not None and date_s:
+            try:
+                d = _dt.date.fromisoformat(date_s)
+                points.append((d, float(val)))
+            except (ValueError, TypeError):
+                pass
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if points:
+        points.sort(key=lambda p: p[0])
+        dates = [p[0] for p in points]
+        values = [p[1] for p in points]
+
+        import matplotlib.dates as mdates
+        ax.plot_date(
+            [mdates.date2num(d) for d in dates],
+            values,
+            "-o",
+            color="#2E4A6B",
+            linewidth=2,
+            markersize=6,
+        )
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+        fig.autofmt_xdate(rotation=35, ha="right")
+
+        # Intervention markers
+        if interventions:
+            for i, interv in enumerate(interventions):
+                idate_s = interv.get("date")
+                if not idate_s:
+                    continue
+                try:
+                    idate = _dt.date.fromisoformat(idate_s)
+                    icolor = interv.get("color") or _INTERVENTION_COLORS[
+                        i % len(_INTERVENTION_COLORS)
+                    ]
+                    ilabel = interv.get("label") or f"Intervention {i+1}"
+                    ax.axvline(
+                        mdates.date2num(idate),
+                        color=icolor,
+                        linestyle="--",
+                        linewidth=1.5,
+                        label=ilabel,
+                        alpha=0.85,
+                    )
+                except (ValueError, TypeError):
+                    pass
+            ax.legend(fontsize=8, loc="upper right")
+    else:
+        ax.text(0.5, 0.5, f"No data for metric '{metric}'",
+                ha="center", va="center", transform=ax.transAxes, color="#888")
+
+    ax.set_ylabel(ylabel or metric, fontsize=9)
+    ax.set_title(title or f"Timeline: {metric}", fontsize=10)
+    ax.grid(True, axis="y", linestyle=":", alpha=0.4)
+    plt.tight_layout()
+    return fig
+
+
 def plot_time_of_night(
     bin_centers_hours: list[float],
     counts_per_min: list[float],

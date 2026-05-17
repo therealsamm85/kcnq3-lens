@@ -3169,6 +3169,282 @@ except Exception as e:
     check("v0.14.3: summarize v0.14.3 fields", False, str(e))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# v0.15.0 — Longitudinal Compare (15 tests)
+# ─────────────────────────────────────────────────────────────────────────────
+section("v0.15.0 — Longitudinal Compare")
+from src.comparison.longitudinal import compare_recordings, LongitudinalDelta, _detect_topographic_shift
+
+
+def _make_findings(
+    n_channels: int = 8,
+    kurtosis_base: float = 5.0,
+    hotspot_ch: str | None = None,
+    pdr_hz: float | None = 9.0,
+    complex_sw_pct: float = 15.0,
+    spindle_density: float | None = None,
+    sleep_h: float = 0.0,
+    duration_h: float = 24.0,
+    events_per_min: float = 2.0,
+    n_events: int = 288,
+) -> dict:
+    """Build a minimal findings dict that compare_recordings can work with."""
+    channels = [f"C{i}" for i in range(n_channels)]
+    all_ch = []
+    for i, ch in enumerate(channels):
+        kval = (kurtosis_base * 5) if (ch == hotspot_ch) else kurtosis_base
+        all_ch.append({"name": ch, "median": kval, "p90": kval * 1.2,
+                       "pct_high_kurtosis": 20.0})
+    findings = {
+        "topography": {"all_channels": all_ch},
+        "background": {"posterior_dominant_rhythm_hz": pdr_hz},
+        "morphology": {
+            "pct_complex_spike_wave": complex_sw_pct,
+            "events_per_minute": events_per_min,
+            "n_events": n_events,
+        },
+        "time_of_night": {"analyzed_duration_min": duration_h * 60},
+    }
+    if spindle_density is not None:
+        findings["spindles"] = {"density_per_minute": spindle_density}
+    if sleep_h >= 2.0:
+        findings["sleep_architecture"] = {
+            "total_sleep_time_h": sleep_h,
+            "total_recording_time_h": duration_h,
+        }
+    return findings
+
+
+# Test 1: identical recordings → delta ≈ 0
+try:
+    # Use a hotspot to avoid the flat-CV edge case
+    _f = _make_findings(hotspot_ch="C0", kurtosis_base=2.0)
+    _d = compare_recordings(_f, _f)
+    check("v0.15.0: identical recordings → mean_spike_rate_delta_pct == 0",
+          _d.mean_spike_rate_delta_pct == 0.0)
+    # With a dominant hotspot, topography is non-flat in both → "preserved"
+    check("v0.15.0: identical recordings (with hotspot) → topographic_shift == 'preserved'",
+          _d.topographic_shift == "preserved",
+          f"got {_d.topographic_shift!r}")
+except Exception as e:
+    check("v0.15.0: identical recordings delta=0", False, str(e))
+    check("v0.15.0: identical recordings topo=preserved", False, str(e))
+
+# Test 2: age_delta > 0.5y → confound logged
+try:
+    _f = _make_findings()
+    _d = compare_recordings(_f, _f, age_a_years=5.0, age_b_years=6.0)
+    has_age_confound = any("age_delta" in c for c in _d.confounds)
+    check("v0.15.0: age_delta=1yr → 'age_delta' confound in list",
+          has_age_confound, f"confounds={_d.confounds}")
+except Exception as e:
+    check("v0.15.0: age_delta confound", False, str(e))
+
+# Test 3: small age_delta (<0.5y) → NO age confound
+try:
+    _f = _make_findings()
+    _d = compare_recordings(_f, _f, age_a_years=5.0, age_b_years=5.3)
+    no_age_confound = not any("age_delta" in c for c in _d.confounds)
+    check("v0.15.0: age_delta=0.3yr → no age_delta confound",
+          no_age_confound, f"confounds={_d.confounds}")
+except Exception as e:
+    check("v0.15.0: small age_delta no confound", False, str(e))
+
+# Test 4: 49min vs 24h → duration_mismatch confound, duration_compatible=False
+try:
+    _f49 = _make_findings(duration_h=0.82)   # ~49 min
+    _f24 = _make_findings(duration_h=24.0)
+    _d = compare_recordings(
+        _f24, _f49,
+        date_a="2024-08-01", date_b="2026-02-17",
+        metadata_a={"duration_h": 24.0},
+        metadata_b={"duration_h": 0.82},
+    )
+    check("v0.15.0: 49min vs 24h → duration_compatible == False",
+          not _d.duration_compatible)
+    has_dur_confound = any("duration_mismatch" in c for c in _d.confounds)
+    check("v0.15.0: 49min vs 24h → 'duration_mismatch' confound",
+          has_dur_confound, f"confounds={_d.confounds}")
+    has_dur_in_warning = ("49min" in _d.methodology_warning or
+                          "0.8h" in _d.methodology_warning or
+                          "24h" in _d.methodology_warning or
+                          "24.0h" in _d.methodology_warning)
+    check("v0.15.0: methodology_warning mentions durations",
+          has_dur_in_warning, f"warning={_d.methodology_warning!r}")
+except Exception as e:
+    check("v0.15.0: duration_mismatch confound", False, str(e))
+    check("v0.15.0: duration_compatible=False", False, str(e))
+    check("v0.15.0: methodology_warning has durations", False, str(e))
+
+# Test 5: topographic shift — 2024 T4 hotspot → 2026 flat → "flattened"
+try:
+    _fa_hot = _make_findings(hotspot_ch="C0", kurtosis_base=1.0)  # C0 has huge kurtosis
+    # Build flat findings: all channels same low value
+    _fb_flat = {
+        "topography": {"all_channels": [
+            {"name": f"C{i}", "median": 3.0, "p90": 4.0, "pct_high_kurtosis": 5.0}
+            for i in range(8)
+        ]},
+        "background": {"posterior_dominant_rhythm_hz": 9.0},
+        "morphology": {"pct_complex_spike_wave": 5.0, "events_per_minute": 0.4},
+        "time_of_night": {"analyzed_duration_min": 60},
+    }
+    _d = compare_recordings(_fa_hot, _fb_flat)
+    check("v0.15.0: hotspot→flat → topographic_shift == 'flattened'",
+          _d.topographic_shift == "flattened", f"got {_d.topographic_shift!r}")
+except Exception as e:
+    check("v0.15.0: topographic flattening detection", False, str(e))
+
+# Test 6: topographic shift preserved (same hotspots)
+try:
+    _rates_a = {"Fp1": 8.0, "F3": 7.0, "T4": 9.0, "Cz": 6.0, "P3": 5.0,
+                "O1": 3.0, "F4": 4.0, "T3": 3.5}
+    _rates_b = {"Fp1": 7.5, "F3": 7.2, "T4": 8.8, "Cz": 5.8, "P3": 5.1,
+                "O1": 2.9, "F4": 3.8, "T3": 3.3}
+    shift, top5a, top5b = _detect_topographic_shift(_rates_a, _rates_b)
+    check("v0.15.0: _detect_topographic_shift — same hotspots → 'preserved'",
+          shift == "preserved", f"got {shift!r}")
+except Exception as e:
+    check("v0.15.0: topographic preserved detection", False, str(e))
+
+# Test 7: spindle comparison only when BOTH have sleep >= 2h
+try:
+    _f_sleep = _make_findings(spindle_density=3.5, sleep_h=4.0, duration_h=8.0)
+    _f_wake = _make_findings(spindle_density=None, sleep_h=0.0, duration_h=0.82)
+    _d = compare_recordings(_f_sleep, _f_wake)
+    check("v0.15.0: sleep A + wake B → spindle comparison NOT attempted (delta=None)",
+          _d.spindle_delta_pct is None,
+          f"spindle_delta_pct={_d.spindle_delta_pct!r}")
+    check("v0.15.0: sleep A + wake B → spindle_density_a/b both None",
+          _d.spindle_density_a is None and _d.spindle_density_b is None)
+except Exception as e:
+    check("v0.15.0: spindle skip when one is wake-only", False, str(e))
+    check("v0.15.0: spindle_density both None when wake", False, str(e))
+
+# Test 8: spindle comparison attempted when BOTH have sleep >= 2h
+try:
+    _f_s1 = _make_findings(spindle_density=3.5, sleep_h=4.0, duration_h=8.0)
+    _f_s2 = _make_findings(spindle_density=4.2, sleep_h=5.0, duration_h=8.0)
+    _d = compare_recordings(_f_s1, _f_s2)
+    check("v0.15.0: both have sleep → spindle_delta_pct is not None",
+          _d.spindle_delta_pct is not None,
+          f"spindle_delta_pct={_d.spindle_delta_pct!r}")
+    expected_pct = round((4.2 - 3.5) / 3.5 * 100, 1)
+    check("v0.15.0: spindle_delta_pct is correct value",
+          abs(_d.spindle_delta_pct - expected_pct) < 0.5,
+          f"expected≈{expected_pct}, got {_d.spindle_delta_pct}")
+except Exception as e:
+    check("v0.15.0: spindle comparison both have sleep", False, str(e))
+    check("v0.15.0: spindle_delta_pct value check", False, str(e))
+
+# Test 9: LongitudinalDelta has all required fields
+try:
+    _f = _make_findings()
+    _d = compare_recordings(_f, _f)
+    required_fields = [
+        "recording_a", "recording_b", "age_delta_years",
+        "duration_compatible", "methodology_warning",
+        "spike_rate_per_channel", "mean_spike_rate_delta_pct",
+        "topographic_shift", "top5_channels_a", "top5_channels_b",
+        "pdr_a", "pdr_b", "pdr_delta_hz",
+        "complex_sw_pct_a", "complex_sw_pct_b",
+        "spindle_density_a", "spindle_density_b", "spindle_delta_pct",
+        "confounds", "interpretation_hints",
+    ]
+    for field in required_fields:
+        check(f"v0.15.0: LongitudinalDelta has field '{field}'",
+              hasattr(_d, field))
+except Exception as e:
+    check("v0.15.0: LongitudinalDelta fields", False, str(e))
+
+# Test 10: interpretation_hints non-empty for large delta
+# Use explicit events_per_minute to drive the spike rate delta
+try:
+    _fa = _make_findings(kurtosis_base=20.0, events_per_min=18.0, n_events=25920)
+    _fb = _make_findings(kurtosis_base=2.0, events_per_min=2.0, n_events=144)  # ~89% reduction
+    _d = compare_recordings(_fa, _fb)
+    check("v0.15.0: large spike reduction → interpretation_hints non-empty",
+          len(_d.interpretation_hints) > 0,
+          f"hints={_d.interpretation_hints}")
+    has_reduction_hint = any(
+        "%" in h and ("decrease" in h.lower() or "reduction" in h.lower())
+        for h in _d.interpretation_hints
+    )
+    check("v0.15.0: reduction hint mentions percentage",
+          has_reduction_hint, f"hints={_d.interpretation_hints}")
+except Exception as e:
+    check("v0.15.0: interpretation hints for large delta", False, str(e))
+    check("v0.15.0: reduction hint content", False, str(e))
+
+# Test 11: different_hotspots detection
+try:
+    _rates_a2 = {"Fp1": 9.0, "F3": 8.5, "T4": 8.0, "Cz": 7.5, "P3": 7.0,
+                 "O1": 2.0, "F4": 2.1, "T3": 2.2}
+    # B: completely different top channels
+    _rates_b2 = {"Fp1": 2.0, "F3": 2.1, "T4": 2.2, "Cz": 2.3, "P3": 2.4,
+                 "O1": 9.0, "F4": 8.5, "T3": 8.0}
+    shift2, _, _ = _detect_topographic_shift(_rates_a2, _rates_b2)
+    check("v0.15.0: completely different hotspots → 'different_hotspots'",
+          shift2 == "different_hotspots", f"got {shift2!r}")
+except Exception as e:
+    check("v0.15.0: different_hotspots detection", False, str(e))
+
+# Test 12: different recording conditions → confound
+try:
+    _f = _make_findings()
+    _d = compare_recordings(_f, _f, condition_a="routine_wake",
+                            condition_b="ambulatory_sleep")
+    has_condition_confound = any("recording_condition" in c for c in _d.confounds)
+    check("v0.15.0: different conditions → 'recording_condition' confound",
+          has_condition_confound, f"confounds={_d.confounds}")
+except Exception as e:
+    check("v0.15.0: different conditions confound", False, str(e))
+
+# Test 13: confounds list is present even with no confounds (empty list)
+try:
+    _f = _make_findings(duration_h=1.0)
+    _d = compare_recordings(_f, _f)
+    check("v0.15.0: confounds is a list (may be empty)",
+          isinstance(_d.confounds, list))
+except Exception as e:
+    check("v0.15.0: confounds is list", False, str(e))
+
+# Test 14: plot_longitudinal_comparison returns a Figure
+try:
+    import matplotlib.pyplot as _mplt
+    _f1 = _make_findings(kurtosis_base=8.0)
+    _f2 = _make_findings(kurtosis_base=3.0)
+    _d = compare_recordings(_f1, _f2)
+    from src.utils.plots import plot_longitudinal_comparison
+    _fig = plot_longitudinal_comparison(_d)
+    check("v0.15.0: plot_longitudinal_comparison returns Figure",
+          isinstance(_fig, _mplt.Figure))
+    _mplt.close(_fig)
+except Exception as e:
+    check("v0.15.0: plot_longitudinal_comparison", False, str(e))
+
+# Test 15: plot_metric_timeline returns a Figure with intervention markers
+try:
+    from src.utils.plots import plot_metric_timeline
+    _entries = [
+        {"date": "2024-08-01", "pdr_hz": 8.2},
+        {"date": "2025-03-15", "pdr_hz": 8.7},
+        {"date": "2026-02-17", "pdr_hz": 9.1},
+    ]
+    _interventions = [{"date": "2024-11-01", "label": "Supplements started"}]
+    _fig2 = plot_metric_timeline(
+        entries=_entries,
+        metric="pdr_hz",
+        interventions=_interventions,
+        title="PDR over time",
+    )
+    check("v0.15.0: plot_metric_timeline returns Figure",
+          isinstance(_fig2, _mplt.Figure))
+    _mplt.close(_fig2)
+except Exception as e:
+    check("v0.15.0: plot_metric_timeline", False, str(e))
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
