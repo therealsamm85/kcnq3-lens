@@ -48,6 +48,8 @@ from .analyses.slow_waves import summarize_slow_waves
 from .analyses.hfo_ripples import compute_hfo_ripples, summarize_hfo_ripples
 from .analyses.coupling import compute_so_spindle_coupling, summarize_so_spindle_coupling
 from .analyses.ied_ml import compute_ied_ml, summarize_ied_ml
+from .analyses.aperiodic import compute_aperiodic_exponent, summarize_aperiodic
+from .analyses.microstates import compute_microstates, summarize_microstates
 from .clinical.impression import build_impression, build_recommendations
 from .clinical.negative_findings import build_negative_findings
 from .utils.sanitize import safe_round_dict
@@ -287,6 +289,29 @@ def run_all_analyses(
     except Exception as e:
         findings["ied_ml"] = {"available": False, "error": str(e)}
         findings.setdefault("errors", {})["ied_ml"] = str(e)
+
+    # --- 11f. Aperiodic exponent (v0.16.0) — Tier 3 ---
+    try:
+        aperiodic = compute_aperiodic_exponent(
+            rec,
+            sleep_stages=sleep_stage_result,
+        )
+        findings["aperiodic"] = summarize_aperiodic(aperiodic)
+    except Exception as e:
+        findings["aperiodic"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["aperiodic"] = str(e)
+
+    # --- 11g. EEG microstates (v0.16.0) — Tier 3 ---
+    try:
+        microstates = compute_microstates(
+            rec,
+            sleep_stages=sleep_stage_result,
+            target_state="wake",
+        )
+        findings["microstates"] = summarize_microstates(microstates)
+    except Exception as e:
+        findings["microstates"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["microstates"] = str(e)
 
     # --- 12. Clinical impression + recommendations (v0.6) ---
     # Built from all preceding findings; deterministic, no LLM.

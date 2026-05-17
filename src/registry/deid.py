@@ -386,6 +386,45 @@ def _extract_ied_nrem_rate_bucket(f: dict) -> str | None:
     return _buckets.bucket_ied_nrem_rate(float(rate))
 
 
+def _extract_aperiodic_chi_n2_bucket(f: dict) -> str | None:
+    """Extract aperiodic exponent χ for N2 state and bucket it. (v0.16.0)"""
+    aperiodic = f.get("aperiodic") if isinstance(f, dict) else None
+    if not isinstance(aperiodic, dict):
+        return None
+    chi_by_state = aperiodic.get("chi_by_state")
+    if not isinstance(chi_by_state, dict):
+        return None
+    n2 = chi_by_state.get("n2")
+    if not isinstance(n2, dict):
+        return None
+    median = n2.get("median")
+    if median is None or not _schema._is_nonneg_finite(median):
+        return None
+    return _buckets.bucket_aperiodic_chi_n2(float(median))
+
+
+def _extract_pdr_asymmetry_bucket(f: dict) -> str | None:
+    """Extract PDR posterior asymmetry bucket. (v0.16.0)"""
+    bg = f.get("background") if isinstance(f, dict) else None
+    if not isinstance(bg, dict):
+        return None
+    interp = bg.get("asymmetry_interpretation")
+    if not isinstance(interp, str):
+        return None
+    return _buckets.bucket_pdr_asymmetry(interp)
+
+
+def _extract_microstate_dominant(f: dict) -> str | None:
+    """Extract dominant microstate class (A/B/C/D). (v0.16.0)"""
+    ms = f.get("microstates") if isinstance(f, dict) else None
+    if not isinstance(ms, dict):
+        return None
+    dom = ms.get("dominant_microstate")
+    if dom in _schema.MICROSTATE_DOMINANT_VALUES:
+        return str(dom)
+    return None
+
+
 def _extract_hfo_pct_on_spike_bucket(f: dict) -> str | None:
     hfo = f.get("hfo_ripples") if isinstance(f, dict) else None
     if not isinstance(hfo, dict):
@@ -447,6 +486,10 @@ _EXTRACTORS_V2_ADDITIONAL: dict[str, Callable[[dict], Any]] = {
     "ied_agreement_bucket": _extract_ied_agreement_bucket,
     "ied_n_rolandic_benign_bucket": _extract_ied_rolandic_bucket,
     "ied_nrem_rate_bucket": _extract_ied_nrem_rate_bucket,
+    # v0.16.0 — Tier 3 add-ons
+    "aperiodic_chi_n2_bucket": _extract_aperiodic_chi_n2_bucket,
+    "pdr_asymmetry_bucket": _extract_pdr_asymmetry_bucket,
+    "microstate_dominant": _extract_microstate_dominant,
 }
 
 # Default extractors (v2)

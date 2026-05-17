@@ -318,6 +318,49 @@ def bucket_ied_nrem_rate(rate: float | None) -> str | None:
     return ">50"
 
 
+# ─── v0.16.0 bucket helpers ───────────────────────────────────────────────────
+
+
+def bucket_aperiodic_chi_n2(chi: float | None) -> str | None:
+    """Map aperiodic exponent χ (N2 state) to schema.APERIODIC_CHI_N2_BUCKETS."""
+    if chi is None:
+        return None
+    try:
+        v = float(chi)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v < 0:  # NaN or negative
+        return None
+    if v < 1.5:
+        return "<1.5"
+    if v < 2.0:
+        return "1.5-2.0"
+    if v < 2.5:
+        return "2.0-2.5"
+    return ">2.5"
+
+
+def bucket_pdr_asymmetry(asymmetry_interpretation: str | None) -> str | None:
+    """Map asymmetry_interpretation string to schema.PDR_ASYMMETRY_BUCKETS.
+
+    Mapping:
+    - "symmetric" / "not_computed" → "symmetric"
+    - "lh_dominant" → "lh_dominant"
+    - "rh_dominant" → "rh_dominant"
+    - "marked_asymmetric" → "marked"
+    """
+    if asymmetry_interpretation is None:
+        return None
+    _MAP = {
+        "symmetric": "symmetric",
+        "not_computed": "symmetric",
+        "lh_dominant": "lh_dominant",
+        "rh_dominant": "rh_dominant",
+        "marked_asymmetric": "marked",
+    }
+    return _MAP.get(str(asymmetry_interpretation))
+
+
 # Re-exports for convenience.
 AGE_BUCKETS = _schema.AGE_BUCKETS
 DURATION_BUCKETS = _schema.DURATION_BUCKETS

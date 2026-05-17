@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 2  # v0.16.0 fields are additive; schema stays at v2
 
 
 # ─── Controlled vocabularies ────────────────────────────────────────────────
@@ -190,6 +190,19 @@ IED_AGE_FLAGS: frozenset[str] = frozenset({
 IED_ROLANDIC_BUCKETS: tuple[str, ...] = ("0", "small", "medium", "large")
 # NREM IED rate buckets — clinically relevant for CSWS/ESES-spectrum evaluation.
 IED_NREM_RATE_BUCKETS: tuple[str, ...] = ("0", "<1", "1-5", "5-15", "15-50", ">50")
+
+
+# ─── Schema v2 additions (v0.16.0 — additive) ───────────────────────────────
+# Aperiodic exponent chi bucketed values
+APERIODIC_CHI_N2_BUCKETS: tuple[str, ...] = ("<1.5", "1.5-2.0", "2.0-2.5", ">2.5")
+
+# PDR asymmetry buckets
+PDR_ASYMMETRY_BUCKETS: tuple[str, ...] = (
+    "symmetric", "lh_dominant", "rh_dominant", "marked",
+)
+
+# Dominant microstate
+MICROSTATE_DOMINANT_VALUES: frozenset[str] = frozenset({"A", "B", "C", "D"})
 
 
 @dataclass(frozen=True)

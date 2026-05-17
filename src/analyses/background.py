@@ -33,6 +33,14 @@ _DISCLAIMER = (
     "discussion with the clinician, not as a diagnostic statement."
 )
 
+_DISCLAIMER_ZSCORE = (
+    "PDR z-score uses age-normative center from _PDR_AGE_NORMS and assumes "
+    "SD=1 Hz (TOOL CONVENTION, not a validated population parameter). "
+    "Reference: Neurology 2024 PMID 38729071 (quantitative PDR vs categorical). "
+    "Asymmetry index uses alpha-band power (8-13 Hz) on O1+P3 vs O2+P4. "
+    "Threshold for 'marked_asymmetric' is |AI| > 0.20 (standard convention)."
+)
+
 
 @dataclass
 class BackgroundResult:
@@ -46,6 +54,12 @@ class BackgroundResult:
     posterior_dominant_rhythm_hz: float
     age_normative_pdr: tuple[float, float] | None
     interpretation: str  # "severely_slow", "mildly_slow", "age_appropriate"
+    # v0.16.0: quantitative PDR z-score and posterior asymmetry
+    pdr_z_score: float | None = None
+    pdr_asymmetry_index: float | None = None   # (LH - RH) / (LH + RH), -1..1
+    posterior_lh_power: float | None = None    # avg alpha power O1+P3
+    posterior_rh_power: float | None = None    # avg alpha power O2+P4
+    asymmetry_interpretation: str = "not_computed"  # symmetric/lh_dominant/rh_dominant/marked_asymmetric
 
 
 _PDR_AGE_NORMS = {
@@ -67,6 +81,60 @@ def _pdr_normative(age: float | None) -> tuple[float, float] | None:
     ages = sorted(_PDR_AGE_NORMS.keys())
     closest = min(ages, key=lambda a: abs(a - age))
     return _PDR_AGE_NORMS[closest]
+
+
+_LH_ASYMMETRY_CHANNELS = ("O1", "P3")
+_RH_ASYMMETRY_CHANNELS = ("O2", "P4")
+_PDR_ZSCORE_SD = 1.0  # TOOL CONVENTION: assumed SD in Hz (Neurology 2024 PMID 38729071)
+_ASYMMETRY_MARKED_THRESHOLD = 0.20
+
+
+def _compute_pdr_z_score(pdr_hz: float, norm: tuple[float, float] | None) -> float | None:
+    """Z-score of PDR vs age-normative center. SD=1 Hz (TOOL CONVENTION)."""
+    if norm is None:
+        return None
+    norm_center = (norm[0] + norm[1]) / 2.0
+    return float((pdr_hz - norm_center) / _PDR_ZSCORE_SD)
+
+
+def _compute_alpha_power(
+    rec: EEGRecording,
+    wake_epoch_indices: list[int],
+    epoch_seconds: float,
+    channels: tuple[str, ...],
+) -> float | None:
+    """Average alpha-band (8-13 Hz) power across named channels."""
+    ch_indices = []
+    for ch in channels:
+        idx = rec.channel_index(ch)
+        if idx is not None:
+            ch_indices.append(idx)
+    if not ch_indices:
+        return None
+
+    from scipy.signal import butter, sosfiltfilt
+    sos_hp = butter(4, 0.5, btype="high", fs=rec.sfreq, output="sos")
+    sos_lp = butter(4, 40.0, btype="low", fs=rec.sfreq, output="sos")
+
+    alpha_pows = []
+    for ep in wake_epoch_indices:
+        d = rec.read_epoch(ep, epoch_seconds)
+        if d is None:
+            continue
+        ch_pows = []
+        for ch_idx in ch_indices:
+            if ch_idx >= d.shape[0]:
+                continue
+            sig = d[ch_idx].astype(float)
+            sig = sosfiltfilt(sos_hp, sig)
+            sig = sosfiltfilt(sos_lp, sig)
+            f, P = welch(sig, fs=rec.sfreq, nperseg=int(rec.sfreq * 4))
+            ch_pows.append(P[(f >= 8) & (f < 13)].sum())
+        if ch_pows:
+            alpha_pows.append(float(np.mean(ch_pows)))
+    if not alpha_pows:
+        return None
+    return float(np.mean(alpha_pows))
 
 
 def compute_background_power(
@@ -177,6 +245,32 @@ def compute_background_power(
     else:
         interp = "age_appropriate"
 
+    # --- v0.16.0: PDR z-score and posterior asymmetry ---
+    pdr_z = _compute_pdr_z_score(pdr_hz, norm)
+
+    lh_power = _compute_alpha_power(
+        rec, wake_epoch_indices, epoch_seconds, _LH_ASYMMETRY_CHANNELS
+    )
+    rh_power = _compute_alpha_power(
+        rec, wake_epoch_indices, epoch_seconds, _RH_ASYMMETRY_CHANNELS
+    )
+    if lh_power is not None and rh_power is not None and (lh_power + rh_power) > 0:
+        ai = (lh_power - rh_power) / (lh_power + rh_power)
+        ai = float(ai)
+    else:
+        ai = None
+
+    if ai is None:
+        asym_interp = "not_computed"
+    elif abs(ai) > _ASYMMETRY_MARKED_THRESHOLD:
+        asym_interp = "marked_asymmetric"
+    elif ai > 0.05:
+        asym_interp = "lh_dominant"
+    elif ai < -0.05:
+        asym_interp = "rh_dominant"
+    else:
+        asym_interp = "symmetric"
+
     return BackgroundResult(
         channels_used=pc_names,
         n_epochs=len(d_pow),
@@ -188,11 +282,16 @@ def compute_background_power(
         posterior_dominant_rhythm_hz=pdr_hz,
         age_normative_pdr=norm,
         interpretation=interp,
+        pdr_z_score=pdr_z,
+        pdr_asymmetry_index=ai,
+        posterior_lh_power=lh_power,
+        posterior_rh_power=rh_power,
+        asymmetry_interpretation=asym_interp,
     )
 
 
 def summarize_background(result: BackgroundResult) -> dict:
-    return {
+    out: dict = {
         "channels_used": result.channels_used,
         "n_epochs": result.n_epochs,
         "delta_pct": round(result.delta_pct, 1),
@@ -205,3 +304,16 @@ def summarize_background(result: BackgroundResult) -> dict:
         "interpretation": result.interpretation,
         "disclaimer": _DISCLAIMER,
     }
+    # v0.16.0 fields
+    if result.pdr_z_score is not None:
+        out["pdr_z_score"] = round(result.pdr_z_score, 2)
+    if result.pdr_asymmetry_index is not None:
+        out["pdr_asymmetry_index"] = round(result.pdr_asymmetry_index, 3)
+    if result.posterior_lh_power is not None:
+        out["posterior_lh_power"] = result.posterior_lh_power
+    if result.posterior_rh_power is not None:
+        out["posterior_rh_power"] = result.posterior_rh_power
+    out["asymmetry_interpretation"] = result.asymmetry_interpretation
+    if result.pdr_z_score is not None:
+        out["disclaimer_zscore"] = _DISCLAIMER_ZSCORE
+    return out

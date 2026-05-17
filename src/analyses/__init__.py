@@ -23,6 +23,8 @@ from .coupling import (
 from .ied_ml import (
     compute_ied_ml, summarize_ied_ml, IEDDetectionResult,
 )
+from .aperiodic import compute_aperiodic_exponent, summarize_aperiodic, AperiodicResult
+from .microstates import compute_microstates, summarize_microstates, MicrostateResult
 
 __all__ = [
     "compute_topography", "TopographyResult",
@@ -42,4 +44,6 @@ __all__ = [
     "compute_hfo_ripples", "summarize_hfo_ripples", "HFORippleResult",
     "compute_so_spindle_coupling", "summarize_so_spindle_coupling", "CouplingResult",
     "compute_ied_ml", "summarize_ied_ml", "IEDDetectionResult",
+    "compute_aperiodic_exponent", "summarize_aperiodic", "AperiodicResult",
+    "compute_microstates", "summarize_microstates", "MicrostateResult",
 ]

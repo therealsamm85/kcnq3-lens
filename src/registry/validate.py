@@ -225,6 +225,16 @@ def _validate_findings(f: Any) -> list[str]:
             lambda v: v in _schema.IED_ROLANDIC_BUCKETS
         ),
         "ied_nrem_rate_bucket": lambda v: v in _schema.IED_NREM_RATE_BUCKETS,
+        # v0.16.0 — Tier 3 add-ons (all optional, additive)
+        "aperiodic_chi_n2_bucket": (
+            lambda v: v in _schema.APERIODIC_CHI_N2_BUCKETS
+        ),
+        "pdr_asymmetry_bucket": (
+            lambda v: v in _schema.PDR_ASYMMETRY_BUCKETS
+        ),
+        "microstate_dominant": (
+            lambda v: v in _schema.MICROSTATE_DOMINANT_VALUES
+        ),
     }
 
     # Keys handled by dedicated sub-validators (excluded from unknown-key check)
