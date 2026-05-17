@@ -250,6 +250,39 @@ def _build_result(
     )
 
 
+def relabel_acclimatization_as_wake(
+    epoch_labels: list[str],
+    acclim_end_epochs: int,
+) -> list[str]:
+    """Relabel the first acclim_end_epochs epochs as 'W'.
+
+    Used to correct YASA's tendency to misclassify quiet wake at recording
+    start as N3 in pediatric all-day recordings. This is a post-processing
+    correction — apply only when acclimatization is suspected by
+    detect_sleep_window() and you want to re-run stage-dependent analyses.
+
+    Parameters
+    ----------
+    epoch_labels : list[str]
+        Original per-epoch labels from compute_sleep_stages().
+    acclim_end_epochs : int
+        Number of epochs at the start to force to 'W'. Typically
+        int(acclimatization_end_hours * 3600 / 30).
+
+    Returns
+    -------
+    list[str]
+        New labels with first acclim_end_epochs set to 'W'.
+    """
+    if acclim_end_epochs <= 0:
+        return list(epoch_labels)
+    result = list(epoch_labels)
+    end = min(acclim_end_epochs, len(result))
+    for i in range(end):
+        result[i] = "W"
+    return result
+
+
 def summarize_sleep_stages(result: SleepStageResult) -> dict:
     return {
         "method": result.method,

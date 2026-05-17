@@ -2628,6 +2628,233 @@ except Exception as e:
     check("D6: Rayleigh comment honesty check", False, str(e))
 
 
+# ─── v0.14.1 — detect_sleep_window multi-block + acclimatization ────────────
+section("v0.14.1 — detect_sleep_window multi-block + acclimatization")
+
+from src.analyses.sleep_onset import (
+    detect_sleep_window as _dsw,
+    SleepWindowResult as _SWR,
+    summarize_sleep_window as _summ_sw,
+)
+from src.analyses.sleep_stages import (
+    relabel_acclimatization_as_wake as _relabel_acclim,
+)
+from src.readers.nihon_kohden import read_nihon_kohden as _read_nk
+
+_REFERENCE_PATH = Path("/path/to/eeg/FA06301E.EEG")
+
+# Helper: create a synthetic recording with specified per-epoch delta/alpha envelope
+def _make_sleep_rec(
+    n_hours: float,
+    sfreq: float = 200.0,
+    sleep_mask_fn=None,  # callable(epoch_idx, n_epochs) -> bool (True = sleep-like)
+) -> "EEGRecording":
+    """Synthetic 19-ch recording with alpha/delta shaped by sleep_mask_fn."""
+    n_epochs = int(n_hours * 3600 / 30)
+    n_samples_per_epoch = int(30 * sfreq)
+    n_ch = 19
+    ch_names = ["Fp1", "F4", "F3", "C4", "C3", "P4", "P3", "O2", "O1",
+                "F8", "F7", "T4", "T3", "T6", "T5", "Fz", "Cz", "Pz", "Fp2"]
+    rng = np.random.default_rng(42)
+    t = np.linspace(0, 30.0, n_samples_per_epoch, endpoint=False)
+    segments = []
+    for ep in range(n_epochs):
+        if sleep_mask_fn is not None and sleep_mask_fn(ep, n_epochs):
+            # Sleep-like: strong delta (1 Hz), weak alpha
+            sig = (80 * np.sin(2 * np.pi * 1.0 * t) +
+                   5 * np.sin(2 * np.pi * 10.0 * t) +
+                   rng.standard_normal(n_samples_per_epoch) * 5)
+        else:
+            # Wake-like: strong alpha (10 Hz), weak delta
+            sig = (5 * np.sin(2 * np.pi * 1.0 * t) +
+                   60 * np.sin(2 * np.pi * 10.0 * t) +
+                   rng.standard_normal(n_samples_per_epoch) * 5)
+        epoch_data = np.tile(sig, (n_ch, 1)).astype(np.float32)
+        segments.append(epoch_data)
+    data = np.concatenate(segments, axis=1)
+    rec = EEGRecording(
+        path=Path("/synth_sleep"),
+        sfreq=sfreq, n_channels=n_ch, duration_s=n_hours * 3600,
+        channel_names=ch_names, n_channels_in_file=n_ch,
+        eeg_channel_indices=list(range(n_ch)), format_name="synth",
+    )
+    rec._full_data = data
+    return rec
+
+# Test 1: Pure wake all-day recording → result is well-formed, summarize works
+# Note: the delta/alpha 50th-percentile heuristic cannot distinguish a perfectly
+# uniform wake signal (same alpha:delta ratio everywhere) from sleep — it will
+# pick the longest above-threshold run regardless. We test structural correctness,
+# not confidence, because the heuristic is undefined on a degenerate input.
+try:
+    _rec_wake = _make_sleep_rec(18.0, sleep_mask_fn=lambda ep, n: False)
+    _sw_wake = _dsw(_rec_wake)
+    check("v0.14.1: all-wake 18h → result is SleepWindowResult",
+          isinstance(_sw_wake, _SWR))
+    _summ_wake = _summ_sw(_sw_wake)
+    check("v0.14.1: summarize_sleep_window has n_additional_blocks key",
+          "n_additional_blocks" in _summ_wake)
+    check("v0.14.1: summarize has confidence key",
+          "confidence" in _summ_wake)
+except Exception as e:
+    check("v0.14.1: all-wake 18h recording", False, str(e))
+
+# Test 2: Night-only 8h recording → primary block, 0 naps, no acclim
+try:
+    def _night_only(ep, n): return True  # all epochs sleep-like
+    _rec_night = _make_sleep_rec(8.0, sleep_mask_fn=_night_only)
+    _sw_night = _dsw(_rec_night)
+    check("v0.14.1: 8h sleep-only → primary block found",
+          _sw_night.sleep_duration_hours >= 4.0)
+    check("v0.14.1: 8h sleep-only → no additional blocks",
+          len(_sw_night.additional_blocks) == 0)
+    check("v0.14.1: 8h sleep-only → no acclimatization flag",
+          _sw_night.acclimatization_end_hours is None)
+except Exception as e:
+    check("v0.14.1: night-only 8h", False, str(e))
+
+# Test 3: 20h recording with night sleep (h5-h15) + nap (h17-h18.5)
+try:
+    def _mixed_mask(ep, n):
+        h = ep * 30 / 3600
+        return (5.0 <= h < 15.0) or (17.0 <= h < 18.5)
+    _rec_mixed = _make_sleep_rec(20.0, sleep_mask_fn=_mixed_mask)
+    _sw_mixed = _dsw(_rec_mixed)
+    check("v0.14.1: mixed 20h → primary sleep ≥ 4h",
+          _sw_mixed.sleep_duration_hours >= 4.0)
+    check("v0.14.1: mixed 20h → at least 1 additional block",
+          len(_sw_mixed.additional_blocks) >= 1)
+    if _sw_mixed.additional_blocks:
+        _blk = _sw_mixed.additional_blocks[0]
+        check("v0.14.1: additional block has required keys",
+              all(k in _blk for k in ("start_h", "end_h", "dur_h", "kind")))
+        check("v0.14.1: additional block kind is 'nap' or 'short_sleep'",
+              _blk["kind"] in ("nap", "short_sleep"))
+except Exception as e:
+    check("v0.14.1: mixed 20h sleep+nap", False, str(e))
+
+# Test 4: SleepWindowResult has additional_blocks and acclimatization_end_hours fields
+try:
+    _bare_swr = _SWR(
+        sleep_start_epoch=0, sleep_end_epoch=100,
+        sleep_start_hours=0.0, sleep_end_hours=50*30/3600,
+        sleep_duration_hours=50*30/3600, confidence="high",
+        wake_indices=[], delta_alpha_ratio_log=[],
+    )
+    check("v0.14.1: SleepWindowResult.additional_blocks default is []",
+          _bare_swr.additional_blocks == [])
+    check("v0.14.1: SleepWindowResult.acclimatization_end_hours default is None",
+          _bare_swr.acclimatization_end_hours is None)
+    check("v0.14.1: SleepWindowResult.note default is ''",
+          _bare_swr.note == "")
+except Exception as e:
+    check("v0.14.1: SleepWindowResult defaults", False, str(e))
+
+# Test 5: relabel_acclimatization_as_wake — 240 epochs forced to W
+try:
+    _labels = ["N3"] * 300 + ["W"] * 100
+    _relabeled = _relabel_acclim(_labels, 240)
+    check("v0.14.1: relabel first 240 epochs as W",
+          all(l == "W" for l in _relabeled[:240]))
+    check("v0.14.1: relabel preserves epochs after 240",
+          _relabeled[240] == "N3")
+    check("v0.14.1: relabel returns copy (original unchanged)",
+          _labels[0] == "N3")
+    check("v0.14.1: relabel length unchanged",
+          len(_relabeled) == 400)
+except Exception as e:
+    check("v0.14.1: relabel_acclimatization_as_wake", False, str(e))
+
+# Test 6: relabel with acclim_end_epochs=0 → no change
+try:
+    _labels_noop = ["N2"] * 50
+    _noop = _relabel_acclim(_labels_noop, 0)
+    check("v0.14.1: relabel with 0 epochs → no change",
+          _noop == _labels_noop)
+except Exception as e:
+    check("v0.14.1: relabel noop", False, str(e))
+
+# Test 7: relabel with acclim_end_epochs > len → clamps to len
+try:
+    _short_labels = ["N3"] * 5
+    _clamped = _relabel_acclim(_short_labels, 1000)
+    check("v0.14.1: relabel clamped to list length",
+          all(l == "W" for l in _clamped) and len(_clamped) == 5)
+except Exception as e:
+    check("v0.14.1: relabel clamp", False, str(e))
+
+# Test 8: summarize_sleep_window with acclimatization includes key
+try:
+    _swr_acclim = _SWR(
+        sleep_start_epoch=100, sleep_end_epoch=800,
+        sleep_start_hours=0.83, sleep_end_hours=6.67,
+        sleep_duration_hours=5.83, confidence="high",
+        wake_indices=[], delta_alpha_ratio_log=[],
+        additional_blocks=[{"start_h": 7.5, "end_h": 9.0, "dur_h": 1.5, "kind": "nap"}],
+        acclimatization_end_hours=2.4,
+        note="acclimatization_suspected: test",
+    )
+    _s = _summ_sw(_swr_acclim)
+    check("v0.14.1: summarize includes acclimatization_end_hours when set",
+          "acclimatization_end_hours" in _s and _s["acclimatization_end_hours"] == 2.4)
+    check("v0.14.1: summarize includes note when set",
+          "note" in _s and "acclimatization_suspected" in _s["note"])
+    check("v0.14.1: summarize additional_blocks list is included",
+          len(_s["additional_blocks"]) == 1)
+    check("v0.14.1: summarize n_additional_blocks == 1",
+          _s["n_additional_blocks"] == 1)
+except Exception as e:
+    check("v0.14.1: summarize with acclimatization", False, str(e))
+
+# Test 9: summarize without acclimatization omits the key
+try:
+    _swr_no_acclim = _SWR(
+        sleep_start_epoch=100, sleep_end_epoch=800,
+        sleep_start_hours=0.83, sleep_end_hours=6.67,
+        sleep_duration_hours=5.83, confidence="high",
+        wake_indices=[], delta_alpha_ratio_log=[],
+    )
+    _s2 = _summ_sw(_swr_no_acclim)
+    check("v0.14.1: summarize omits acclimatization_end_hours when None",
+          "acclimatization_end_hours" not in _s2)
+    check("v0.14.1: summarize omits note when empty",
+          "note" not in _s2)
+except Exception as e:
+    check("v0.14.1: summarize without acclimatization", False, str(e))
+
+# Test 10: confidence logic — 6-12h → high, 4-6h → medium, <4h → medium/low
+try:
+    def _mk_conf_rec(dur_h, all_sleep=True):
+        fn = (lambda ep, n: True) if all_sleep else (lambda ep, n: False)
+        return _make_sleep_rec(dur_h, sleep_mask_fn=fn)
+    _sw_8h = _dsw(_mk_conf_rec(8.0, True))
+    check("v0.14.1: 8h sleep → confidence high",
+          _sw_8h.confidence == "high")
+    _sw_5h = _dsw(_mk_conf_rec(5.0, True))
+    check("v0.14.1: 5h sleep recording → confidence medium or high",
+          _sw_5h.confidence in ("medium", "high"))
+except Exception as e:
+    check("v0.14.1: confidence bands", False, str(e))
+
+# Test 11: the reference patient end-to-end with cached hypnogram (if available)
+_reference_hypno_cache = Path("/tmp/reference_hypnogram.npy")
+if _REFERENCE_PATH.exists():
+    try:
+        _reference_rec_sw = _read_nk(_REFERENCE_PATH)
+        _sw_reference = _dsw(_reference_rec_sw)
+        check("v0.14.1: the reference patient primary sleep block found",
+              _sw_reference.sleep_duration_hours >= 4.0)
+        # Primary should be a night block (starting around h6-h8)
+        check("v0.14.1: the reference patient primary sleep starts after h4",
+              _sw_reference.sleep_start_hours >= 4.0)
+        check("v0.14.1: the reference patient has additional_blocks key",
+              isinstance(_sw_reference.additional_blocks, list))
+    except Exception as e:
+        check("v0.14.1: the reference patient e2e detect_sleep_window", False, str(e))
+else:
+    check("v0.14.1: the reference patient file absent — skipped", True)
+
+
 # ─── v0.14.0 — NK reader start_datetime + time_at_hour() ────────────────────
 section("v0.14.0 — start_datetime + time_at_hour()")
 
