@@ -262,6 +262,60 @@ except Exception as e:
     check("v0.14.2: clock_time_help template", False, str(e))
 
 
+# ─── v0.18.0 — Advanced tab i18n keys ──────────────────────────────────────
+section("v0.18.0 — Advanced analyses tab i18n keys in both languages")
+
+try:
+    from src.i18n import get_translator as _get_tr_v018
+    _T_en_v018 = _get_tr_v018("en").t
+    _T_de_v018 = _get_tr_v018("de").t
+
+    # Simple keys (no template vars)
+    _simple_keys_v018 = [
+        "tab_advanced",
+        "sw_header", "sw_density", "sw_count", "sw_amplitude",
+        "sw_duration", "sw_slope", "sw_notes_label", "sw_unavailable",
+        "hfo_header", "hfo_unavailable_generic",
+        "hfo_rate_nrem", "hfo_total", "hfo_isolated", "hfo_on_spike",
+        "hfo_duration", "hfo_freq",
+        "coupling_header",
+        "coupling_plv", "coupling_phase", "coupling_rayleigh_p",
+        "coupling_n_spindles", "coupling_n_so", "coupling_n_coupled",
+        "coupling_significant", "coupling_nonsignificant",
+        "ied_header",
+        "ied_rate", "ied_count", "ied_nrem_rate", "ied_agreement",
+        "ied_rolandic", "ied_confidence_header", "ied_per_channel_header",
+        "ied_age_flag_drift", "ied_age_flag_untested", "ied_unavailable",
+    ]
+    for _key in _simple_keys_v018:
+        _v_en = _T_en_v018(_key)
+        check(f"v0.18.0: '{_key}' EN non-empty", bool(_v_en))
+        _v_de = _T_de_v018(_key)
+        check(f"v0.18.0: '{_key}' DE non-empty", bool(_v_de))
+
+    # Template keys
+    _hfo_unavail_en = _T_en_v018("hfo_unavailable", sfreq=256)
+    check("v0.18.0: hfo_unavailable template EN",
+          "256" in _hfo_unavail_en)
+    _coupling_unavail_en = _T_en_v018("coupling_unavailable", reason="no spindles")
+    check("v0.18.0: coupling_unavailable template EN",
+          "no spindles" in _coupling_unavail_en)
+    _hfo_pct_en = _T_en_v018("hfo_on_spike_pct", pct=42)
+    check("v0.18.0: hfo_on_spike_pct template EN",
+          "42" in _hfo_pct_en)
+    _sw_cap_en = _T_en_v018("sw_caption")
+    check("v0.18.0: sw_caption non-empty", bool(_sw_cap_en))
+    _hfo_cap_en = _T_en_v018("hfo_caption")
+    check("v0.18.0: hfo_caption non-empty", bool(_hfo_cap_en))
+    _coupling_cap_en = _T_en_v018("coupling_caption")
+    check("v0.18.0: coupling_caption non-empty", bool(_coupling_cap_en))
+    _ied_cap_en = _T_en_v018("ied_caption")
+    check("v0.18.0: ied_caption non-empty", bool(_ied_cap_en))
+
+except Exception as e:
+    check("v0.18.0: Advanced tab i18n", False, str(e))
+
+
 # ─── Final ──────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")

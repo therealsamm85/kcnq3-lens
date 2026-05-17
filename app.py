@@ -410,10 +410,11 @@ def _resolve_windows(rec):
 def _render_findings_tabs(findings: dict, key_prefix: str = ""):
     """Render per-analysis tabs for one findings dict."""
     (tab_qc, tab_clinical, tab_topo, tab_spindle, tab_bg, tab_burst,
-     tab_morph, tab_ton, tab_raw) = st.tabs([
+     tab_morph, tab_ton, tab_advanced, tab_raw) = st.tabs([
         T("tab_quality"), T("tab_clinical"),
         T("tab_topography"), T("tab_spindles"), T("tab_background"),
-        T("tab_bursts"), T("tab_morphology"), T("tab_time_of_night"), T("tab_raw"),
+        T("tab_bursts"), T("tab_morphology"), T("tab_time_of_night"),
+        T("tab_advanced"), T("tab_raw"),
     ])
 
     with tab_qc:
@@ -650,6 +651,171 @@ def _render_findings_tabs(findings: dict, key_prefix: str = ""):
                 st.pyplot(fig_ton)
             except Exception as e:
                 st.warning(f"Plot unavailable: {e}")
+
+    with tab_advanced:
+        st.caption(T("tab_advanced"))
+
+        # ── Slow waves ────────────────────────────────────────────────────────
+        sw = findings.get("slow_waves", {})
+        if sw:
+            st.markdown(f"### {T('sw_header')}")
+            st.caption(T("sw_caption"))
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric(T("sw_count"), str(sw.get("n_slow_waves", 0)))
+            col2.metric(T("sw_density"),
+                        f"{sw.get('density_per_minute', 0):.2f}")
+            ptp = sw.get("mean_ptp_uv")
+            col3.metric(T("sw_amplitude"),
+                        f"{ptp:.1f}" if ptp is not None else "—")
+            dur = sw.get("mean_duration_s")
+            col4.metric(T("sw_duration"),
+                        f"{dur:.3f}" if dur is not None else "—")
+            slope = sw.get("mean_slope_uv_per_s")
+            col5.metric(T("sw_slope"),
+                        f"{slope:.0f}" if slope is not None else "—")
+            if sw.get("notes"):
+                st.caption(T("sw_notes_label") + " " + "; ".join(sw["notes"]))
+        else:
+            st.info(T("sw_unavailable"))
+
+        st.divider()
+
+        # ── HFO ripples ───────────────────────────────────────────────────────
+        hfo = findings.get("hfo_ripples", {})
+        if hfo:
+            st.markdown(f"### {T('hfo_header')}")
+            st.caption(T("hfo_caption"))
+            if not hfo.get("available", True):
+                sfreq = hfo.get("sfreq_used") or 0
+                if sfreq and sfreq < 1000:
+                    st.info(T("hfo_unavailable", sfreq=sfreq))
+                else:
+                    st.info(T("hfo_unavailable_generic"))
+                if hfo.get("notes"):
+                    st.caption("; ".join(hfo["notes"]))
+            else:
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric(T("hfo_rate_nrem"),
+                            f"{hfo.get('rate_per_minute_nrem', 0):.3f}")
+                col2.metric(T("hfo_total"), str(hfo.get("n_ripples_total", 0)))
+                col3.metric(T("hfo_duration"),
+                            f"{hfo.get('median_duration_ms', 0):.1f}")
+                col4.metric(T("hfo_freq"),
+                            f"{hfo.get('median_peak_freq_hz', 0):.1f}")
+
+                n_total = hfo.get("n_ripples_total", 0)
+                n_isolated = hfo.get("n_ripples_isolated", 0)
+                n_on_spike = hfo.get("n_ripples_on_spike", 0)
+                if n_total > 0:
+                    df_hfo = pd.DataFrame({
+                        "Type": [T("hfo_isolated"), T("hfo_on_spike")],
+                        "Count": [n_isolated, n_on_spike],
+                    })
+                    st.bar_chart(df_hfo.set_index("Type"))
+                    pct = 100 * n_on_spike / n_total if n_total else 0
+                    st.write(T("hfo_on_spike_pct", pct=pct))
+                if hfo.get("artifact_warnings"):
+                    for w in hfo["artifact_warnings"]:
+                        st.warning(w)
+        else:
+            st.info(T("hfo_unavailable_generic"))
+
+        st.divider()
+
+        # ── SO–spindle coupling ───────────────────────────────────────────────
+        coupling = findings.get("coupling", {})
+        if coupling:
+            st.markdown(f"### {T('coupling_header')}")
+            st.caption(T("coupling_caption"))
+            if not coupling.get("available", True):
+                reason = coupling.get("unavailable_reason", "insufficient data")
+                st.info(T("coupling_unavailable", reason=reason))
+            else:
+                col1, col2, col3 = st.columns(3)
+                plv = coupling.get("plv")
+                col1.metric(T("coupling_plv"),
+                            f"{plv:.3f}" if plv is not None else "—")
+                phase = coupling.get("preferred_phase_deg")
+                col2.metric(T("coupling_phase"),
+                            f"{phase:.0f}°" if phase is not None else "—")
+                rayleigh_p = coupling.get("rayleigh_p")
+                col3.metric(T("coupling_rayleigh_p"),
+                            f"{rayleigh_p:.4f}" if rayleigh_p is not None else "—")
+
+                col4, col5, col6 = st.columns(3)
+                col4.metric(T("coupling_n_spindles"),
+                            str(coupling.get("n_spindles_total", 0)))
+                col5.metric(T("coupling_n_so"),
+                            str(coupling.get("n_so_total", 0)))
+                col6.metric(T("coupling_n_coupled"),
+                            str(coupling.get("n_spindles_in_so", 0)))
+
+                if rayleigh_p is not None and rayleigh_p < 0.05:
+                    st.success(T("coupling_significant"))
+                else:
+                    st.info(T("coupling_nonsignificant"))
+        else:
+            st.info(T("coupling_unavailable", reason="no data"))
+
+        st.divider()
+
+        # ── IED ML ────────────────────────────────────────────────────────────
+        ied = findings.get("ied_ml", {})
+        if ied:
+            st.markdown(f"### {T('ied_header')}")
+            st.caption(T("ied_caption"))
+            if not ied.get("available", True):
+                st.info(T("ied_unavailable"))
+            else:
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric(T("ied_rate"),
+                            f"{ied.get('rate_per_minute', 0):.2f}")
+                col2.metric(T("ied_count"),
+                            str(ied.get("n_ied_candidates", 0)))
+                nrem_r = ied.get("nrem_rate_per_min")
+                col3.metric(T("ied_nrem_rate"),
+                            f"{nrem_r:.2f}" if nrem_r is not None else "—")
+                col4.metric(T("ied_rolandic"),
+                            str(ied.get("n_likely_rolandic_benign", 0)))
+
+                agreement = ied.get("agreement_with_morphology_pct", 0)
+                st.metric(T("ied_agreement"), f"{agreement:.0f}%")
+
+                # Confidence breakdown
+                conf = ied.get("confidence_distribution", {})
+                if conf:
+                    st.write(f"**{T('ied_confidence_header')}**")
+                    df_conf = pd.DataFrame({
+                        "Confidence": list(conf.keys()),
+                        "Count": list(conf.values()),
+                    })
+                    st.bar_chart(df_conf.set_index("Confidence"))
+
+                # Per-channel rates
+                per_ch = ied.get("per_channel_rates", {})
+                if per_ch:
+                    st.write(f"**{T('ied_per_channel_header')}**")
+                    df_ch = pd.DataFrame({
+                        "Channel": list(per_ch.keys()),
+                        "Rate (/min)": [round(v, 3) for v in per_ch.values()],
+                    }).sort_values("Rate (/min)", ascending=False)
+                    st.dataframe(df_ch, use_container_width=True, hide_index=True)
+
+                # Age appropriateness flag
+                age_flag = ied.get("age_appropriateness_flag", "ok")
+                if age_flag == "drift_warning":
+                    st.warning(T("ied_age_flag_drift"))
+                elif age_flag == "untested":
+                    st.caption(T("ied_age_flag_untested"))
+
+                # Warnings from the detector
+                for w in (ied.get("warnings") or []):
+                    st.warning(w)
+
+                if ied.get("disclaimer"):
+                    st.caption(ied["disclaimer"])
+        else:
+            st.info(T("ied_unavailable"))
 
     with tab_raw:
         st.subheader(T("raw_header"))

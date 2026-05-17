@@ -370,6 +370,81 @@ TRANSLATIONS = {
             "Heuristic stage classification. YASA's model is trained on "
             "adult PSG, so pediatric output is approximate."
         ),
+
+        # v0.18.0: Advanced (Tier-2) analyses tab
+        "tab_advanced": "Advanced analyses",
+
+        # Slow waves
+        "sw_header": "Slow-wave oscillations (NREM marker)",
+        "sw_caption": (
+            "Slow oscillations (0.5–2 Hz, ≥75 µV) are a marker of deep NREM "
+            "sleep. They reflect cortical down/up-state cycling and are coupled "
+            "to memory consolidation. Density is descriptive — no normative "
+            "thresholds are applied."
+        ),
+        "sw_density": "Density (/min)",
+        "sw_count": "Slow waves detected",
+        "sw_amplitude": "Mean amplitude (µV p-p)",
+        "sw_duration": "Mean duration (s)",
+        "sw_slope": "Mean slope (µV/s)",
+        "sw_notes_label": "Notes:",
+        "sw_unavailable": "Slow-wave analysis not available for this recording.",
+
+        # HFO ripples
+        "hfo_header": "HFO ripples (80–250 Hz)",
+        "hfo_caption": (
+            "High-frequency oscillations in the ripple band (80–250 Hz). "
+            "Detected using the Staba energy-threshold method on NREM epochs. "
+            "HFOs on spikes are a marker of the seizure-onset zone in focal "
+            "epilepsies. **Requires ≥1 kHz sample rate.** Descriptive only."
+        ),
+        "hfo_unavailable": "HFO detection requires ≥1 kHz sample rate ({sfreq:.0f} Hz recorded).",
+        "hfo_unavailable_generic": "HFO detection not available for this recording.",
+        "hfo_rate_nrem": "NREM rate (/min)",
+        "hfo_total": "Total ripples",
+        "hfo_isolated": "Isolated",
+        "hfo_on_spike": "On spike",
+        "hfo_duration": "Median duration (ms)",
+        "hfo_freq": "Median peak freq (Hz)",
+        "hfo_on_spike_pct": "On-spike fraction: {pct:.0f}%",
+
+        # SO–spindle coupling
+        "coupling_header": "SO–spindle coupling",
+        "coupling_caption": (
+            "Measures whether sleep spindles preferentially occur at a specific "
+            "phase of slow oscillations — a signature of active memory "
+            "consolidation. PLV (phase-locking value) ranges 0–1; higher = "
+            "stronger coupling. Rayleigh test p < 0.05 indicates non-uniform "
+            "phase distribution. **Descriptive only.**"
+        ),
+        "coupling_unavailable": "Coupling analysis not available: {reason}",
+        "coupling_plv": "PLV (coupling strength)",
+        "coupling_phase": "Preferred phase (°)",
+        "coupling_rayleigh_p": "Rayleigh p-value",
+        "coupling_n_spindles": "Total spindles",
+        "coupling_n_so": "Slow oscillations",
+        "coupling_n_coupled": "Spindles in SO window",
+        "coupling_significant": "✓ Coupling statistically significant (Rayleigh p < 0.05)",
+        "coupling_nonsignificant": "No significant phase preference detected (Rayleigh p ≥ 0.05).",
+
+        # IED ML
+        "ied_header": "Automated IED detection",
+        "ied_caption": (
+            "Ensemble heuristic detector (morphology template + amplitude rule). "
+            "IED rate (/min) and NREM rate (/min) are descriptive. "
+            "Agreement with the morphology detector provides a cross-check. "
+            "**Not clinically validated — discuss results with a neurologist.**"
+        ),
+        "ied_rate": "IED rate (/min)",
+        "ied_count": "IED candidates",
+        "ied_nrem_rate": "NREM rate (/min)",
+        "ied_agreement": "Agreement with morphology",
+        "ied_rolandic": "Likely rolandic-benign",
+        "ied_confidence_header": "Confidence breakdown",
+        "ied_per_channel_header": "Rate by channel (/min)",
+        "ied_age_flag_drift": "⚠ Age-appropriateness: drift warning — pediatric rules applied cautiously.",
+        "ied_age_flag_untested": "ℹ Age-appropriateness: age range untested against normative data.",
+        "ied_unavailable": "IED detection not available for this recording.",
     },
 
     # ─── German ────────────────────────────────────────────────────────────
@@ -755,5 +830,80 @@ TRANSLATIONS = {
             "Heuristische Stadien-Klassifikation. YASA-Modell ist auf "
             "Erwachsenen-PSG trainiert — pädiatrische Ausgabe näherungsweise."
         ),
+
+        # v0.18.0: Advanced (Tier-2) analyses tab
+        "tab_advanced": "Erweiterte Analysen",
+
+        # Slow waves
+        "sw_header": "Langsame Oszillationen (NREM-Marker)",
+        "sw_caption": (
+            "Langsame Wellen (0,5–2 Hz, ≥75 µV) sind ein Marker für tiefen "
+            "NREM-Schlaf. Sie spiegeln kortikale Down/Up-Zyklus-Muster wider "
+            "und sind mit Gedächtniskonsolidierung verknüpft. Dichte ist "
+            "deskriptiv — keine Normwert-Schwellen werden angewendet."
+        ),
+        "sw_density": "Dichte (/min)",
+        "sw_count": "Erkannte langsame Wellen",
+        "sw_amplitude": "Mittlere Amplitude (µV p-p)",
+        "sw_duration": "Mittlere Dauer (s)",
+        "sw_slope": "Mittlere Steigung (µV/s)",
+        "sw_notes_label": "Hinweise:",
+        "sw_unavailable": "Langsame-Wellen-Analyse nicht verfügbar.",
+
+        # HFO ripples
+        "hfo_header": "HFO-Ripples (80–250 Hz)",
+        "hfo_caption": (
+            "Hochfrequente Oszillationen im Ripple-Band (80–250 Hz). "
+            "Erkannt mit Staba-Energieschwellen-Methode in NREM-Epochen. "
+            "HFOs auf Spikes markieren die Anfallsursprungszone bei fokalen "
+            "Epilepsien. **Benötigt ≥1 kHz Abtastrate.** Nur deskriptiv."
+        ),
+        "hfo_unavailable": "HFO-Detektion benötigt ≥1 kHz Abtastrate ({sfreq:.0f} Hz aufgezeichnet).",
+        "hfo_unavailable_generic": "HFO-Detektion für diese Aufnahme nicht verfügbar.",
+        "hfo_rate_nrem": "NREM-Rate (/min)",
+        "hfo_total": "Ripples gesamt",
+        "hfo_isolated": "Isoliert",
+        "hfo_on_spike": "Auf Spike",
+        "hfo_duration": "Mittlere Dauer (ms)",
+        "hfo_freq": "Mittlere Spitzenfrequenz (Hz)",
+        "hfo_on_spike_pct": "Spike-Anteil: {pct:.0f}%",
+
+        # SO–spindle coupling
+        "coupling_header": "SO–Spindel-Kopplung",
+        "coupling_caption": (
+            "Misst, ob Schlafspindeln bevorzugt zu einer bestimmten Phase "
+            "langsamer Oszillationen auftreten — ein Merkmal aktiver "
+            "Gedächtniskonsolidierung. PLV (Phase-Locking-Wert) 0–1; höher = "
+            "stärkere Kopplung. Rayleigh p < 0,05 zeigt nicht-uniforme "
+            "Phasenverteilung. **Nur deskriptiv.**"
+        ),
+        "coupling_unavailable": "Kopplungsanalyse nicht verfügbar: {reason}",
+        "coupling_plv": "PLV (Kopplungsstärke)",
+        "coupling_phase": "Bevorzugte Phase (°)",
+        "coupling_rayleigh_p": "Rayleigh-p-Wert",
+        "coupling_n_spindles": "Spindeln gesamt",
+        "coupling_n_so": "Langsame Oszillationen",
+        "coupling_n_coupled": "Spindeln im SO-Fenster",
+        "coupling_significant": "✓ Kopplung statistisch signifikant (Rayleigh p < 0,05)",
+        "coupling_nonsignificant": "Keine signifikante Phasenpräferenz (Rayleigh p ≥ 0,05).",
+
+        # IED ML
+        "ied_header": "Automatisierte IED-Detektion",
+        "ied_caption": (
+            "Ensemble-Heuristik (Morphologie-Template + Amplitudenregel). "
+            "IED-Rate (/min) und NREM-Rate (/min) sind deskriptiv. "
+            "Übereinstimmung mit Morphologie-Detektor als Kreuzvalidierung. "
+            "**Klinisch nicht validiert — Ergebnisse mit Neurologin/Neurologen besprechen.**"
+        ),
+        "ied_rate": "IED-Rate (/min)",
+        "ied_count": "IED-Kandidaten",
+        "ied_nrem_rate": "NREM-Rate (/min)",
+        "ied_agreement": "Übereinstimmung mit Morphologie",
+        "ied_rolandic": "Wahrscheinlich rolandisch-benigne",
+        "ied_confidence_header": "Konfidenz-Verteilung",
+        "ied_per_channel_header": "Rate nach Kanal (/min)",
+        "ied_age_flag_drift": "⚠ Altersangemessenheit: Drift-Warnung — pädiatrische Regeln vorsichtig angewendet.",
+        "ied_age_flag_untested": "ℹ Altersangemessenheit: Altersgruppe nicht gegen Normwerte getestet.",
+        "ied_unavailable": "IED-Detektion für diese Aufnahme nicht verfügbar.",
     },
 }
