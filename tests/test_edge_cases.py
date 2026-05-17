@@ -3445,6 +3445,55 @@ except Exception as e:
     check("v0.15.0: plot_metric_timeline", False, str(e))
 
 
+# ─── v0.18.1: bipolar-montage detector ────────────────────────────────────
+section("v0.18.1: bipolar montage detector (audit fix)")
+
+try:
+    from src.readers.edf import _detect_bipolar_montage as _bd
+
+    # CHB-MIT real channel labels
+    _chb = ["FP1-F7", "F7-T7", "T7-P7", "P7-O1", "FP1-F3", "F3-C3",
+            "FP2-F4", "F4-C4", "FZ-CZ", "CZ-PZ"]
+    _det, _ex = _bd(_chb)
+    check("v0.18.1: CHB-MIT bipolar names detected",
+          _det and len(_ex) == 3)
+    check("v0.18.1: examples include FP1-F7", "FP1-F7" in _ex)
+
+    # Monopolar w/ explicit reference (Fp1-A1) should NOT trip
+    _det2, _ = _bd(["EEG Fp1-A1", "EEG F3-A1", "EEG O1-A1"])
+    check("v0.18.1: monopolar w/ A1 reference NOT flagged", not _det2)
+
+    # Plain monopolar — no dash at all
+    _det3, _ = _bd(["Fp1", "Fp2", "F3", "F4", "C3", "O1"])
+    check("v0.18.1: plain monopolar NOT flagged", not _det3)
+
+    # Fp1-Ref pattern (Ref is not a 10-20 electrode)
+    _det4, _ = _bd(["Fp1-Ref", "F3-Ref", "C3-Ref"])
+    check("v0.18.1: Fp1-Ref pattern NOT flagged", not _det4)
+
+    # Empty input is safe
+    _det5, _ex5 = _bd([])
+    check("v0.18.1: empty channel list returns (False, [])",
+          not _det5 and _ex5 == [])
+
+    # i18n keys present in both languages
+    from src.i18n import get_translator as _gt
+    _en = _gt("en").t
+    _de = _gt("de").t
+    check("v0.18.1: bipolar_block_header EN present",
+          bool(_en("bipolar_block_header")))
+    check("v0.18.1: bipolar_block_header DE present",
+          bool(_de("bipolar_block_header")))
+    _en_body = _en("bipolar_block_body", examples="FP1-F7")
+    _de_body = _de("bipolar_block_body", examples="FP1-F7")
+    check("v0.18.1: bipolar_block_body EN renders examples",
+          "FP1-F7" in _en_body)
+    check("v0.18.1: bipolar_block_body DE renders examples",
+          "FP1-F7" in _de_body)
+except Exception as e:
+    check("v0.18.1: bipolar detector + i18n", False, str(e))
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")

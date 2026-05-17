@@ -21,6 +21,39 @@ _STANDARD_EEG_NAMES = {
     "T7", "T8", "P7", "P8",
 }
 
+# Uppercased lookup of all 10-20 electrode names. Used by the bipolar-montage
+# detector so it matches regardless of how the file capitalises labels
+# (CHB-MIT uses "FP1", "FZ", "CZ"; standard MNE uses "Fp1", "Fz", "Cz").
+_STANDARD_EEG_NAMES_UPPER = {n.upper() for n in _STANDARD_EEG_NAMES}
+
+
+def _detect_bipolar_montage(
+    original_names: list[str],
+) -> tuple[bool, list[str]]:
+    """Return (is_bipolar, examples) when channel names look like bipolar pairs.
+
+    A bipolar channel name is two 10-20 electrode labels joined by a dash,
+    e.g. 'FP1-F7', 'F7-T7', 'CZ-PZ'. We require both halves to be in the
+    10-20 electrode set so we don't false-positive on names like 'Fp1-A1'
+    (Fp1 referenced to ear A1 — that is monopolar with explicit reference)
+    or 'EEG Fp1-REF' (monopolar with named reference).
+    """
+    examples: list[str] = []
+    for raw in original_names:
+        cleaned = raw.replace("EEG ", "").strip()
+        if "-" not in cleaned:
+            continue
+        parts = cleaned.split("-")
+        if len(parts) < 2:
+            continue
+        left = parts[0].strip().upper()
+        right = parts[1].strip().upper()
+        if left in _STANDARD_EEG_NAMES_UPPER and right in _STANDARD_EEG_NAMES_UPPER:
+            examples.append(raw)
+            if len(examples) >= 3:
+                break
+    return (len(examples) > 0, examples)
+
 
 def is_edf_compatible(path: Path) -> bool:
     """Detect EDF / EDF+ / BDF / BrainVision by extension and header."""
@@ -58,6 +91,11 @@ def read_edf(path: Path) -> EEGRecording:
     channel_names = list(raw.ch_names)
     n_channels = len(channel_names)
     duration_s = float(raw.times[-1])
+
+    # v0.18.1: detect bipolar montage BEFORE normalising. Once we split on
+    # the dash we lose the second electrode and can no longer tell whether
+    # 'FP1' came from 'FP1-F7' (bipolar) or 'EEG FP1-A1' (monopolar w/ ref).
+    bipolar_detected, bipolar_examples = _detect_bipolar_montage(channel_names)
 
     # Normalize channel names: strip prefixes/suffixes like "EEG Fp1-A1"
     normalized = []
@@ -100,6 +138,8 @@ def read_edf(path: Path) -> EEGRecording:
         format_name=f"EDF / {ext.lstrip('.').upper()}",
         start_datetime=start_datetime,
         start_datetime_tz_stripped=tz_stripped,
+        bipolar_montage_detected=bipolar_detected,
+        bipolar_channel_examples=bipolar_examples,
     )
     rec._full_data = data_uv.astype(np.float32)
     return rec

@@ -367,6 +367,25 @@ def _show_file_metrics(rec):
         st.write(", ".join(rec.channel_names))
 
 
+def _bipolar_gate(rec):
+    """Pre-flight gate: refuse bipolar recordings before analyses run.
+
+    All analyses (topography, morphology, HFO, coupling, etc.) assume
+    common-reference monopolar data. Bipolar derivations like 'FP1-F7'
+    would load and analyse without error but produce scientifically wrong
+    results — see audit at v0.18.1.
+
+    Returns rec when safe to proceed, None when blocked (and emits an
+    st.error explaining why).
+    """
+    if rec is None or not getattr(rec, "bipolar_montage_detected", False):
+        return rec
+    examples = ", ".join(getattr(rec, "bipolar_channel_examples", []) or []) or "FP1-F7, F7-T7"
+    st.error(T("bipolar_block_header"))
+    st.markdown(T("bipolar_block_body", examples=examples))
+    return None
+
+
 def _file_uploader_section(slot_key: str, header_key: str):
     """Render a file-upload section (one EEG file) and return loaded recording."""
     st.header(T(header_key))
@@ -389,6 +408,9 @@ def _file_uploader_section(slot_key: str, header_key: str):
         with st.spinner(T("reading", filename=source_path.name)):
             rec = load_eeg(source_path)
         _show_file_metrics(rec)
+        rec = _bipolar_gate(rec)
+        if rec is None:
+            return None
         # Single-mode: register for auto-detect (compare mode uses two slots)
         if slot_key == "single":
             st.session_state["loaded_rec_for_autodetect"] = rec
@@ -1144,7 +1166,12 @@ if mode == "quickstart":
     st.caption(
         "**Or try with sample data** — a public pediatric EEG from PhysioNet's "
         "CHB-MIT database (~40 MB, female age 11, 1 hour, 23 channels). "
-        "First download caches locally; subsequent runs are instant."
+        "First download caches locally; subsequent runs are instant.\n\n"
+        "⚠️ **CHB-MIT uses a bipolar montage** (channel names like `FP1-F7`). "
+        "KCNQ3-Lens analyses assume monopolar referenced data, so this sample "
+        "exercises the EDF reader and file pipeline only — analyses will be "
+        "blocked at load time. Use it to confirm the app works; supply a "
+        "monopolar recording for real findings."
     )
     if st.button("🎬 Use sample data (CHB-MIT chb01_01.edf)",
                  key="qs_sample_btn"):
@@ -1174,12 +1201,14 @@ if mode == "quickstart":
             try:
                 with st.spinner(f"Reading {qs_source.name}..."):
                     qs_rec = load_eeg(qs_source)
-                st.session_state["loaded_rec_for_autodetect"] = qs_rec
-                st.success(
-                    f"✅ Loaded **{qs_source.name}** — "
-                    f"{qs_rec.duration_s/3600:.1f} hours, "
-                    f"{qs_rec.n_channels} EEG channels."
-                )
+                qs_rec = _bipolar_gate(qs_rec)
+                if qs_rec is not None:
+                    st.session_state["loaded_rec_for_autodetect"] = qs_rec
+                    st.success(
+                        f"✅ Loaded **{qs_source.name}** — "
+                        f"{qs_rec.duration_s/3600:.1f} hours, "
+                        f"{qs_rec.n_channels} EEG channels."
+                    )
             except Exception as e:
                 st.error(f"Could not read the file: {e}")
                 qs_rec = None

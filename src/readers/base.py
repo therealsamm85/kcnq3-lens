@@ -36,6 +36,12 @@ class EEGRecording:
     # UI can surface this as "UTC-normalized" so clock times aren't taken
     # to be local-tz exact.
     start_datetime_tz_stripped: bool = False
+    # v0.18.1: True when reader detected a bipolar montage in the source file
+    # (channel names like 'FP1-F7', 'F7-T7'). All analyses assume monopolar
+    # referenced data; bipolar files load but produce scientifically wrong
+    # results, so the app gates analyses on this flag.
+    bipolar_montage_detected: bool = False
+    bipolar_channel_examples: list[str] = field(default_factory=list)
     _read_epoch_fn: callable = field(default=None, repr=False)
     _full_data: np.ndarray | None = field(default=None, repr=False)
 

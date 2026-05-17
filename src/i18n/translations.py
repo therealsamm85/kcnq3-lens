@@ -445,6 +445,23 @@ TRANSLATIONS = {
         "ied_age_flag_drift": "⚠ Age-appropriateness: drift warning — pediatric rules applied cautiously.",
         "ied_age_flag_untested": "ℹ Age-appropriateness: age range untested against normative data.",
         "ied_unavailable": "IED detection not available for this recording.",
+
+        # v0.18.1: bipolar montage block
+        "bipolar_block_header": (
+            "Bipolar montage detected — analyses blocked"
+        ),
+        "bipolar_block_body": (
+            "This file uses **bipolar derivations** (e.g. `{examples}`). "
+            "KCNQ3-Lens analyses (topography, morphology, HFO, coupling, IED) "
+            "assume **monopolar referenced** data — running them on bipolar "
+            "channels produces scientifically wrong results, so the analyses "
+            "have been blocked.\n\n"
+            "**What to do:**\n"
+            "- If your EEG system recorded monopolar data, re-export it with a "
+            "common reference (e.g. average, linked-ears, Cz).\n"
+            "- If you only have bipolar data, this tool cannot analyse it; "
+            "consider re-recording or use the original raw monopolar file."
+        ),
     },
 
     # ─── German ────────────────────────────────────────────────────────────
@@ -905,5 +922,23 @@ TRANSLATIONS = {
         "ied_age_flag_drift": "⚠ Altersangemessenheit: Drift-Warnung — pädiatrische Regeln vorsichtig angewendet.",
         "ied_age_flag_untested": "ℹ Altersangemessenheit: Altersgruppe nicht gegen Normwerte getestet.",
         "ied_unavailable": "IED-Detektion für diese Aufnahme nicht verfügbar.",
+
+        # v0.18.1: bipolar montage block
+        "bipolar_block_header": (
+            "Bipolare Montage erkannt — Analysen blockiert"
+        ),
+        "bipolar_block_body": (
+            "Diese Datei verwendet **bipolare Ableitungen** (z.B. `{examples}`). "
+            "KCNQ3-Lens-Analysen (Topographie, Morphologie, HFO, Kopplung, IED) "
+            "setzen **monopolare, referenzierte** Daten voraus — Analysen auf "
+            "bipolaren Kanälen liefern wissenschaftlich falsche Ergebnisse, "
+            "deshalb wurden sie blockiert.\n\n"
+            "**Was tun:**\n"
+            "- Wenn Ihr EEG-Gerät monopolar aufgezeichnet hat, exportieren Sie "
+            "die Datei mit einer gemeinsamen Referenz neu (z.B. Average, "
+            "verbundene Ohren, Cz).\n"
+            "- Wenn nur bipolare Daten vorliegen, kann dieses Tool sie nicht "
+            "analysieren; bitte die Original-Roh-Aufnahme verwenden."
+        ),
     },
 }
