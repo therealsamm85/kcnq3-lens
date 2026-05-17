@@ -2855,6 +2855,39 @@ else:
     check("v0.14.1: the reference patient file absent — skipped", True)
 
 
+# ─── v0.14.2 — i18n key coverage for new strings ────────────────────────────
+section("v0.14.2 — i18n new string keys")
+
+from src.i18n import get_translator as _get_t
+_T14_en = _get_t("en").t
+_T14_de = _get_t("de").t
+
+_v142_keys = [
+    "auto_detect_success_clock",
+    "auto_detect_secondary_block",
+    "auto_detect_acclim_warning",
+    "auto_detect_allday_tip",
+    "clock_time_help",
+    "allday_recording_banner",
+]
+
+for _k in _v142_keys:
+    try:
+        _r = _T14_en(_k, clock_start="21:48 Thu", clock_end="08:02 Fri",
+                     duration=10.2, conf="high", kind="nap", end_h=2.4,
+                     clock="21:48 Thu", h=7, m=10)
+        check(f"v0.14.2: '{_k}' present in 'en'", bool(_r))
+    except Exception as e:
+        check(f"v0.14.2: '{_k}' present in 'en'", False, str(e))
+    try:
+        _r = _T14_de(_k, clock_start="21:48 Do", clock_end="08:02 Fr",
+                     duration=10.2, conf="high", kind="Nickerchen", end_h=2.4,
+                     clock="21:48 Do", h=7, m=10)
+        check(f"v0.14.2: '{_k}' present in 'de'", bool(_r))
+    except Exception as e:
+        check(f"v0.14.2: '{_k}' present in 'de'", False, str(e))
+
+
 # ─── v0.14.0 — NK reader start_datetime + time_at_hour() ────────────────────
 section("v0.14.0 — start_datetime + time_at_hour()")
 

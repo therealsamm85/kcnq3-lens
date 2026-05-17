@@ -159,27 +159,49 @@ if "wake_start_default" not in st.session_state:
     st.session_state.sleep_start_default = 25200
     st.session_state.sleep_end_default = 54000
 
+def _clock_help(seconds: int | float) -> str | None:
+    """Return a clock-time help string if a recording is loaded, else None."""
+    _rec = st.session_state.get("loaded_rec_for_autodetect")
+    if _rec is None:
+        return None
+    clock = _rec.time_at_hour(float(seconds) / 3600.0)
+    if clock is None:
+        return None
+    h = int(seconds) // 3600
+    m = (int(seconds) % 3600) // 60
+    return T("clock_time_help", clock=clock, h=h, m=m)
+
+
 wake_start_s = st.sidebar.number_input(T("wake_start"),
                                        value=st.session_state.wake_start_default,
-                                       key="wake_start_input")
+                                       key="wake_start_input",
+                                       help=_clock_help(st.session_state.wake_start_default))
 wake_end_s = st.sidebar.number_input(T("wake_end"),
                                      value=st.session_state.wake_end_default,
-                                     key="wake_end_input")
+                                     key="wake_end_input",
+                                     help=_clock_help(st.session_state.wake_end_default))
 sleep_start_s = st.sidebar.number_input(T("sleep_start"),
                                         value=st.session_state.sleep_start_default,
-                                        key="sleep_start_input")
+                                        key="sleep_start_input",
+                                        help=_clock_help(st.session_state.sleep_start_default))
 sleep_end_s = st.sidebar.number_input(T("sleep_end"),
                                       value=st.session_state.sleep_end_default,
-                                      key="sleep_end_input")
+                                      key="sleep_end_input",
+                                      help=_clock_help(st.session_state.sleep_end_default))
 
 # Auto-detect button — populated after a file is loaded
-if st.session_state.get("loaded_rec_for_autodetect") is not None:
+_rec_for_ad = st.session_state.get("loaded_rec_for_autodetect")
+if _rec_for_ad is not None:
+    # Quick-start suggestion for long (all-day) recordings
+    _is_all_day = _rec_for_ad.duration_s > 16 * 3600
+    if _is_all_day:
+        st.sidebar.info(T("auto_detect_allday_tip"))
+
     if st.sidebar.button(T("auto_detect_button"), key="autodetect_btn"):
-        rec_for_detect = st.session_state["loaded_rec_for_autodetect"]
         try:
             with st.sidebar:
                 with st.spinner("Detecting..."):
-                    sw = detect_sleep_window(rec_for_detect)
+                    sw = detect_sleep_window(_rec_for_ad)
             st.session_state.sleep_start_default = int(sw.sleep_start_hours * 3600)
             st.session_state.sleep_end_default = int(sw.sleep_end_hours * 3600)
             # Wake window: use the first 60 minutes before the detected sleep
@@ -187,11 +209,44 @@ if st.session_state.get("loaded_rec_for_autodetect") is not None:
             wake_end = max(wake_start + 600, int((sw.sleep_start_hours - 0.5) * 3600))
             st.session_state.wake_start_default = wake_start
             st.session_state.wake_end_default = wake_end
-            st.sidebar.success(T("auto_detect_success",
-                                  start=sw.sleep_start_hours,
-                                  end=sw.sleep_end_hours,
-                                  duration=sw.sleep_duration_hours,
-                                  conf=sw.confidence))
+
+            # Build enhanced result message with clock times if available
+            _clock_start = _rec_for_ad.time_at_hour(sw.sleep_start_hours)
+            _clock_end = _rec_for_ad.time_at_hour(sw.sleep_end_hours)
+            if _clock_start and _clock_end:
+                _det_msg = T("auto_detect_success_clock",
+                              clock_start=_clock_start,
+                              clock_end=_clock_end,
+                              duration=sw.sleep_duration_hours,
+                              conf=sw.confidence)
+            else:
+                _det_msg = T("auto_detect_success",
+                              start=sw.sleep_start_hours,
+                              end=sw.sleep_end_hours,
+                              duration=sw.sleep_duration_hours,
+                              conf=sw.confidence)
+            st.sidebar.success(_det_msg)
+
+            # Secondary blocks
+            for blk in sw.additional_blocks:
+                _blk_clock_s = _rec_for_ad.time_at_hour(blk["start_h"])
+                _blk_clock_e = _rec_for_ad.time_at_hour(blk["end_h"])
+                if _blk_clock_s and _blk_clock_e:
+                    st.sidebar.info(T("auto_detect_secondary_block",
+                                      kind=blk["kind"],
+                                      clock_start=_blk_clock_s,
+                                      clock_end=_blk_clock_e,
+                                      duration=blk["dur_h"]))
+
+            # Acclimatization flag
+            if sw.acclimatization_end_hours is not None:
+                _acclim_clock = _rec_for_ad.time_at_hour(sw.acclimatization_end_hours)
+                st.sidebar.warning(T("auto_detect_acclim_warning",
+                                      end_h=round(sw.acclimatization_end_hours, 1),
+                                      clock_end=_acclim_clock or ""))
+                # Store for optional relabeling later
+                st.session_state["acclim_end_hours"] = sw.acclimatization_end_hours
+
             if sw.confidence == "low":
                 st.sidebar.warning(T("auto_detect_low_conf"))
             st.rerun()
@@ -1236,6 +1291,12 @@ if mode == "quickstart":
 # ═══════════════════════════════════════════════════════════════════════════
 elif mode == "single":
     rec = _file_uploader_section("single", "step1_header")
+
+    # All-day recording banner: shown when the recording is > 16h
+    if rec is not None and rec.duration_s > 16 * 3600:
+        _acclim_applied = st.session_state.get("acclim_end_hours") is not None
+        if not _acclim_applied:
+            st.warning(T("allday_recording_banner"))
 
     st.header(T("step2_header"))
     if rec is None:

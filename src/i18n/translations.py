@@ -263,12 +263,37 @@ TRANSLATIONS = {
             "Detected sleep window: {start:.1f}h–{end:.1f}h "
             "({duration:.1f}h, confidence: {conf})"
         ),
+        "auto_detect_success_clock": (
+            "✓ Night sleep: {clock_start} → {clock_end} "
+            "({duration:.1f}h, confidence: {conf})"
+        ),
+        "auto_detect_secondary_block": (
+            "ℹ {kind}: {clock_start} → {clock_end} ({duration:.1f}h)"
+        ),
+        "auto_detect_acclim_warning": (
+            "⚠ Acclimatization: first {end_h:.1f}h flagged as likely quiet wake "
+            "({clock_end}) — YASA may have misclassified this as sleep (N3). "
+            "This is a best-effort heuristic, not a clinical finding."
+        ),
+        "auto_detect_allday_tip": (
+            "💡 Long recording detected. Click 'Auto-detect' to find the night "
+            "sleep window and flag possible quiet-wake misclassification at start."
+        ),
         "auto_detect_low_conf": (
             "⚠ Low confidence — please verify the detected window manually. "
             "Overnight recordings with heavy artifact or unusual sleep "
             "architecture can confuse the heuristic."
         ),
         "auto_detect_failed": "Auto-detect failed: {error}",
+        # Clock-time help text for sidebar number inputs
+        "clock_time_help": "= {clock} ({h}h {m}min from recording start)",
+        # All-day recording banner (shown in single mode for recordings > 16h)
+        "allday_recording_banner": (
+            "⚠ This is a long recording (>16h). For accurate analysis, "
+            "click **Auto-detect sleep** in the sidebar — it will find the "
+            "night sleep window and flag any quiet-wake epochs that YASA may "
+            "have misclassified as sleep."
+        ),
 
         # Quality control
         "tab_quality": "Quality",
@@ -626,12 +651,37 @@ TRANSLATIONS = {
             "Erkanntes Schlaf-Fenster: {start:.1f}h–{end:.1f}h "
             "({duration:.1f}h, Konfidenz: {conf})"
         ),
+        "auto_detect_success_clock": (
+            "✓ Nachtschlaf: {clock_start} → {clock_end} "
+            "({duration:.1f}h, Konfidenz: {conf})"
+        ),
+        "auto_detect_secondary_block": (
+            "ℹ {kind}: {clock_start} → {clock_end} ({duration:.1f}h)"
+        ),
+        "auto_detect_acclim_warning": (
+            "⚠ Akklimatisierung: erste {end_h:.1f}h als wahrscheinlich waches "
+            "Eingewöhnen markiert ({clock_end}) — YASA hat diese Zeit möglicherweise "
+            "als Schlaf (N3) fehlklassifiziert. Best-effort-Heuristik, "
+            "kein klinischer Befund."
+        ),
+        "auto_detect_allday_tip": (
+            "💡 Lange Aufnahme erkannt. 'Auto-erkennen' klicken, um das "
+            "Nacht-Schlaf-Fenster zu finden und mögliche Fehlklassifikation "
+            "von ruhigem Wachen am Anfang zu markieren."
+        ),
         "auto_detect_low_conf": (
             "⚠ Niedrige Konfidenz — bitte das erkannte Fenster manuell prüfen. "
             "Übernacht-Aufnahmen mit viel Artefakt oder ungewöhnlicher "
             "Schlafarchitektur können die Heuristik verwirren."
         ),
         "auto_detect_failed": "Auto-Erkennung fehlgeschlagen: {error}",
+        "clock_time_help": "= {clock} ({h}h {m}min nach Aufnahme-Start)",
+        "allday_recording_banner": (
+            "⚠ Lange Aufnahme (>16h). Für genaue Analyse bitte **Schlaf "
+            "automatisch erkennen** in der Seitenleiste klicken — findet das "
+            "Nacht-Schlaf-Fenster und markiert Epochen, die YASA fälschlicherweise "
+            "als Schlaf klassifiziert haben könnte."
+        ),
 
         "tab_quality": "Qualität",
         "qc_header": "Aufnahme-Qualität",

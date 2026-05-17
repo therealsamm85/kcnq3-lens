@@ -204,6 +204,64 @@ except Exception as e:
     check("v0.9.1 regression test", False, str(e))
 
 
+# ─── v0.14.2 — All-day banner + new i18n keys ───────────────────────────────
+section("v0.14.2 — new i18n keys present in both languages")
+
+try:
+    from src.i18n import get_translator
+    _T_en = get_translator("en").t
+    _T_de = get_translator("de").t
+
+    _new_keys = [
+        "auto_detect_success_clock",
+        "auto_detect_secondary_block",
+        "auto_detect_acclim_warning",
+        "auto_detect_allday_tip",
+        "clock_time_help",
+        "allday_recording_banner",
+    ]
+    for _key in _new_keys:
+        _val_en = _T_en(_key, clock_start="21:48 Thu", clock_end="08:02 Fri",
+                         duration=10.2, conf="high", kind="nap",
+                         end_h=2.4, clock="21:48 Thu", h=7, m=10,
+                         clock_end_val="17:00 Thu")
+        check(f"v0.14.2: '{_key}' renders in English (non-empty)",
+              bool(_val_en))
+        _val_de = _T_de(_key, clock_start="21:48 Do", clock_end="08:02 Fr",
+                         duration=10.2, conf="high", kind="Nickerchen",
+                         end_h=2.4, clock="21:48 Do", h=7, m=10,
+                         clock_end_val="17:00 Do")
+        check(f"v0.14.2: '{_key}' renders in German (non-empty)",
+              bool(_val_de))
+except Exception as e:
+    check("v0.14.2: i18n new keys", False, str(e))
+
+# v0.14.2: allday_recording_banner is not shown for short recordings
+# (structural test via AppTest)
+try:
+    at_short = AppTest.from_file(APP_PATH, default_timeout=30)
+    at_short.session_state["language"] = "en"
+    at_short.run()
+    # No recording loaded → no banner
+    _all_warnings = [w.value for w in at_short.warning]
+    _banner_text = "long recording"
+    check("v0.14.2: No all-day banner when no recording loaded",
+          not any(_banner_text in w for w in _all_warnings))
+except Exception as e:
+    check("v0.14.2: no-banner check", False, str(e))
+
+# v0.14.2: clock_time_help helper returns None when no recording in session
+try:
+    import streamlit as _st
+    # We can't run the helper in isolation (it reads session_state),
+    # but we can verify the translations used by it are well-formed.
+    _help_en = get_translator("en").t("clock_time_help", clock="14:37 Thu", h=0, m=0)
+    check("v0.14.2: clock_time_help template renders",
+          "14:37 Thu" in _help_en and "0h" in _help_en)
+except Exception as e:
+    check("v0.14.2: clock_time_help template", False, str(e))
+
+
 # ─── Final ──────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")
