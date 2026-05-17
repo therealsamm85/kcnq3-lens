@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
@@ -30,6 +31,7 @@ class EEGRecording:
     data_start_byte: int = 0
     bytes_per_sample: int = 2
     is_offset_binary: bool = False
+    start_datetime: datetime.datetime | None = None
     _read_epoch_fn: callable = field(default=None, repr=False)
     _full_data: np.ndarray | None = field(default=None, repr=False)
 
@@ -82,6 +84,25 @@ class EEGRecording:
             "get_eeg_data() requires full in-memory loading; "
             "use read_epoch() for lazy access."
         )
+
+    def time_at_hour(self, hour: float) -> str | None:
+        """Return wall-clock 'HH:MM dayName' for a given recording hour, or None.
+
+        Parameters
+        ----------
+        hour : float
+            Hours elapsed since recording start (e.g. 7.17 = 7h 10min in).
+
+        Returns
+        -------
+        str | None
+            Formatted as 'HH:MM Mon' (locale-independent 3-letter day), or None
+            if start_datetime is not available.
+        """
+        if self.start_datetime is None:
+            return None
+        t = self.start_datetime + datetime.timedelta(hours=hour)
+        return t.strftime("%H:%M %a")
 
     def channel_index(self, name: str) -> int | None:
         """Return file-channel index for a named channel, or None if absent."""

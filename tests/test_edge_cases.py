@@ -2628,6 +2628,110 @@ except Exception as e:
     check("D6: Rayleigh comment honesty check", False, str(e))
 
 
+# ─── v0.14.0 — NK reader start_datetime + time_at_hour() ────────────────────
+section("v0.14.0 — start_datetime + time_at_hour()")
+
+import datetime as _dt
+from src.readers.nihon_kohden import read_nihon_kohden
+from src.readers.base import EEGRecording
+
+_REFERENCE_PATH = Path("/path/to/eeg/FA06301E.EEG")
+
+# 1. the reference patient EEG: start_datetime matches header
+if _REFERENCE_PATH.exists():
+    try:
+        _reference_rec = read_nihon_kohden(_REFERENCE_PATH)
+        _expected_dt = _dt.datetime(2024, 8, 1, 14, 37, 56)
+        check("v0.14.0: the reference patient start_datetime == 2024-08-01 14:37:56",
+              _reference_rec.start_datetime == _expected_dt,
+              str(_reference_rec.start_datetime))
+        # time_at_hour(7.17) ≈ 21:48 Thu
+        _t717 = _reference_rec.time_at_hour(7.17)
+        check("v0.14.0: time_at_hour(7.17) == '21:47 Thu' or '21:48 Thu'",
+              _t717 in ("21:47 Thu", "21:48 Thu"),
+              str(_t717))
+        # time_at_hour(17.4) ≈ 08:02 Fri  (14:37 + 17h24min = 08:01 next day)
+        _t174 = _reference_rec.time_at_hour(17.4)
+        check("v0.14.0: time_at_hour(17.4) starts with '08:' Fri",
+              _t174 is not None and "Fri" in _t174 and _t174.startswith("08:"),
+              str(_t174))
+    except Exception as e:
+        check("v0.14.0: the reference patient start_datetime parse", False, str(e))
+else:
+    check("v0.14.0: the reference patient file absent — skipped (expected in dev env)", True)
+
+# 2. Synthetic NK recording (no header file) → graceful None
+try:
+    import tempfile as _tmpf
+    import os as _os
+    _tmp_eeg = Path(_tmpf.mktemp(suffix=".EEG"))
+    # Write a minimal fake EEG-1200A header (32 bytes sig + 32 bytes padding + non-date at 64)
+    _fake_head = b"EEG-1200A V01.00" + b"\x00" * 16 + b"\x00" * 16 + b"NOTADATE      X"
+    # Pad to at least data_start (0x38E3 = 14563) + a few samples
+    _n_ch = 29
+    _fake_samples = 200  # 1 second
+    _fake_data = (b"\x00" * 2 * _n_ch * _fake_samples)
+    _fake_body = _fake_head + b"\x00" * (0x38E3 - len(_fake_head)) + _fake_data
+    _tmp_eeg.write_bytes(_fake_body)
+    _synth_rec = read_nihon_kohden(_tmp_eeg)
+    check("v0.14.0: synthetic NK with bad datetime → start_datetime is None",
+          _synth_rec.start_datetime is None,
+          str(_synth_rec.start_datetime))
+    check("v0.14.0: time_at_hour() returns None when start_datetime is None",
+          _synth_rec.time_at_hour(5.0) is None)
+    _os.unlink(_tmp_eeg)
+except Exception as e:
+    check("v0.14.0: synthetic NK graceful None", False, str(e))
+
+# 3. EEGRecording dataclass: start_datetime defaults to None
+try:
+    _bare_rec = EEGRecording(
+        path=Path("/x"), sfreq=200, n_channels=1, duration_s=30.0,
+        channel_names=["Cz"], n_channels_in_file=1,
+        eeg_channel_indices=[0], format_name="test",
+    )
+    check("v0.14.0: EEGRecording default start_datetime is None",
+          _bare_rec.start_datetime is None)
+    check("v0.14.0: time_at_hour() on bare record returns None",
+          _bare_rec.time_at_hour(1.0) is None)
+except Exception as e:
+    check("v0.14.0: EEGRecording default start_datetime", False, str(e))
+
+# 4. time_at_hour() format correctness
+try:
+    _ref_rec = EEGRecording(
+        path=Path("/x"), sfreq=200, n_channels=1, duration_s=30.0,
+        channel_names=["Cz"], n_channels_in_file=1,
+        eeg_channel_indices=[0], format_name="test",
+        start_datetime=_dt.datetime(2024, 8, 1, 14, 37, 56),
+    )
+    _t0 = _ref_rec.time_at_hour(0.0)
+    check("v0.14.0: time_at_hour(0) == '14:37 Thu'",
+          _t0 == "14:37 Thu", str(_t0))
+    _t24 = _ref_rec.time_at_hour(24.0)
+    check("v0.14.0: time_at_hour(24) is next day (Fri)",
+          _t24 is not None and "Fri" in _t24, str(_t24))
+    # Fractional hours
+    _t_half = _ref_rec.time_at_hour(0.5)
+    check("v0.14.0: time_at_hour(0.5) == '15:07 Thu'",
+          _t_half == "15:07 Thu", str(_t_half))
+except Exception as e:
+    check("v0.14.0: time_at_hour format", False, str(e))
+
+# 5. EDF reader: start_datetime is None when no meas_date (minimal synth test)
+try:
+    from src.readers.base import EEGRecording as _EEGRec
+    # We can't create a real EDF in a unit test easily, but we can confirm
+    # the dataclass field exists and is typed correctly via the base class.
+    _anno = _EEGRec.__dataclass_fields__["start_datetime"]
+    check("v0.14.0: start_datetime field exists in EEGRecording dataclass",
+          "start_datetime" in _EEGRec.__dataclass_fields__)
+    check("v0.14.0: start_datetime default is None (field has default None)",
+          _anno.default is None)
+except Exception as e:
+    check("v0.14.0: EEGRecording field introspection", False, str(e))
+
+
 # ─── Final ───────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
 print(f"  PASS: {n_pass}")

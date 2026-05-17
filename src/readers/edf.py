@@ -74,6 +74,18 @@ def read_edf(path: Path) -> EEGRecording:
     # Convert to microvolts for consistency with NK ADC-style numbers
     data_uv = data * 1e6
 
+    # Extract recording start time from MNE's meas_date (timezone-aware or None)
+    import datetime as _dt
+    start_datetime = None
+    meas_date = raw.info.get("meas_date")
+    if meas_date is not None:
+        try:
+            # meas_date may be a timezone-aware datetime; strip tz for uniformity
+            if hasattr(meas_date, "replace"):
+                start_datetime = meas_date.replace(tzinfo=None)
+        except Exception:
+            start_datetime = None
+
     rec = EEGRecording(
         path=path,
         sfreq=sfreq,
@@ -83,6 +95,7 @@ def read_edf(path: Path) -> EEGRecording:
         n_channels_in_file=n_channels,
         eeg_channel_indices=eeg_channel_indices,
         format_name=f"EDF / {ext.lstrip('.').upper()}",
+        start_datetime=start_datetime,
     )
     rec._full_data = data_uv.astype(np.float32)
     return rec

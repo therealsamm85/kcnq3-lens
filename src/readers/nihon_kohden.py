@@ -18,6 +18,7 @@ EEG-1200A files may have minor variations. Test before clinical use.
 
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 
 import numpy as np
@@ -88,6 +89,21 @@ def read_nihon_kohden(
     channel_names = channel_names or _DEFAULT_CH_NAMES_29[:n_channels]
     data_start = data_start or _DEFAULT_DATA_START
 
+    # Parse recording start time from header offset 64.
+    # The EEG-1200A stores 14-char ASCII 'YYYYMMDDHHMMSS' at that offset.
+    # This was verified on an NKT EEG2100 recording; other device families
+    # may vary. Failure is silent — start_datetime stays None.
+    start_datetime: dt.datetime | None = None
+    try:
+        with open(path, "rb") as _fh:
+            _head = _fh.read(78)
+        if len(_head) >= 78:
+            raw_dt = _head[64:78].decode("ascii", errors="replace").strip("\x00 ")
+            if len(raw_dt) >= 14 and raw_dt[:14].isdigit():
+                start_datetime = dt.datetime.strptime(raw_dt[:14], "%Y%m%d%H%M%S")
+    except Exception:
+        start_datetime = None
+
     file_size = path.stat().st_size
     data_bytes = file_size - data_start
     bytes_per_sample = 2  # int16
@@ -126,5 +142,6 @@ def read_nihon_kohden(
         data_start_byte=data_start,
         bytes_per_sample=2,
         is_offset_binary=True,
+        start_datetime=start_datetime,
         _read_epoch_fn=_read_epoch,
     )
