@@ -21,7 +21,7 @@ Three-mode architecture, with honest framing about what is and isn't ML:
 Pediatric drift
 ---------------
 SpikeNet was trained on adult EEG (Jing et al. 2020, JAMA Neurol,
-PMID 32049322). Reported sensitivity ~0.85 in adults but lower in
+PMID 31633740). Reported sensitivity ~0.85 in adults but lower in
 children, with higher false-positive rates on benign Rolandic
 (centrotemporal) spikes. For age_years < 12 we flag drift_warning and
 slightly relax confidence so we don't drop legitimate pediatric
@@ -37,7 +37,7 @@ pattern-leak risk regardless). See ``summarize_ied_ml``.
 
 References
 ----------
-Jing J et al. 2020  PMID 32049322  SpikeNet: ResNet IED classifier (adult)
+Jing J et al. 2020  PMID 31633740  SpikeNet: ResNet IED classifier (adult)
 """
 
 from __future__ import annotations

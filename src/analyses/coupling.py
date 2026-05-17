@@ -3,7 +3,7 @@
 Slow oscillations (SO, 0.5–1.25 Hz) organise spindle timing by preferentially
 expressing spindle bursts during the SO up-state. This temporal co-ordination —
 termed SO-spindle coupling — supports memory consolidation and undergoes
-substantial development across childhood (Hahn et al. 2020, PMID 32499637).
+substantial development across childhood (Hahn et al. 2020, PMID 32579108).
 
 Phase-locking value (PLV) quantifies the consistency of the SO phase at which
 spindle peaks occur. PLV = 1 means every spindle occurs at exactly the same SO
@@ -34,10 +34,10 @@ would be rejected by the scanner if it tried to land in a submission.
 
 References
 ----------
-Helfrich RF et al. 2018  PMID 29395264  SO-spindle coupling and memory in aging
-Hahn M et al. 2020       PMID 32499637  Pediatric SO-spindle coupling, ages 8–19
-Mölle M et al. 2011      PMID 21248118  SO up-state timing of spindles
-Staresina BP et al. 2015 PMID 25822789  SO-spindle coupling in humans
+Helfrich RF et al. 2018  PMID 29249289  SO-spindle coupling and memory in aging
+Hahn M et al. 2020       PMID 32579108  Pediatric SO-spindle coupling, ages 8–19
+Mölle M et al. 2011      PMID 21966073  Fast/slow spindles during SO: coalescence
+Staresina BP et al. 2015 PMID 26389842  Hierarchical nesting of SO/spindles/ripples
 """
 
 from __future__ import annotations

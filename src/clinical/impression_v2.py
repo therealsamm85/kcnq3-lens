@@ -39,7 +39,7 @@ class ClinicalImpressionV2:
 # CSWS spectrum, markedly reduced spindles.
 
 _SANDS_2019_NOTES = {
-    "citation": "Sands 2019 (PMID 31254974)",
+    "citation": "Sands 2019 (PMID 31177578)",
     "typical_topography": "multifocal with centrotemporal emphasis",
     "csws_frequency": "CSWS/ESES present in ~60% of cohort",
     "spindle_typical": "markedly reduced spindle density",

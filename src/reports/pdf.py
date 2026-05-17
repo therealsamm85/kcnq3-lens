@@ -447,11 +447,13 @@ def build_doctor_pdf(
                         ap_rows.append((f"  χ — {state_name}", f"{med:.3f}"))
             if len(ap_rows) > 1:
                 story.append(_kv_table(ap_rows[1:]))
-            # Pediatric norm z-scores
+            # Within-tool z-scores. NOT compared against a published pediatric
+            # normative cohort — no such cohort exists. Label accordingly.
             pnz = ap.get("pediatric_norm_z_scores") or {}
             if pnz:
                 story.append(Paragraph(
-                    "Aperiodic χ z-scores vs pediatric norms: " +
+                    "Aperiodic χ within-tool z-scores (tool-convention "
+                    "reference; no published pediatric norms): " +
                     ", ".join(f"{k}={v:.2f}" for k, v in pnz.items() if v is not None),
                     st["body"],
                 ))
@@ -545,7 +547,7 @@ def build_doctor_pdf(
         story.append(Paragraph(
             "<b>Literaturhinweis:</b> Sands TT et al. (2019) KCNQ3 gain-of-function epilepsy "
             "— CSWS/ESES in ~60%, prominente Schlaf-Aktivierung, stark reduzierte Spindeln. "
-            "PMID 31254974.",
+            "PMID 31177578.",
             st["small"],
         ))
 

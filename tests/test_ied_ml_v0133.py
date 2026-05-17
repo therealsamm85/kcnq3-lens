@@ -611,8 +611,8 @@ section("v0.13.3 — Citation")
 
 from src.clinical.citations import CITATIONS, methods_attribution
 check("jing_spikenet in CITATIONS", "jing_spikenet" in CITATIONS)
-check("jing_spikenet PMID == 32049322",
-      CITATIONS["jing_spikenet"].pubmed_id == "32049322")
+check("jing_spikenet PMID == 31633740",
+      CITATIONS["jing_spikenet"].pubmed_id == "31633740")
 check("methods_attribution ied_ml = jing_spikenet",
       methods_attribution().get("ied_ml") == "jing_spikenet")
 

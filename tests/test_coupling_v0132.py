@@ -731,11 +731,11 @@ from src.clinical.citations import CITATIONS, methods_attribution
 check("helfrich_coupling in CITATIONS",
       "helfrich_coupling" in CITATIONS)
 check("helfrich_coupling PMID correct",
-      CITATIONS["helfrich_coupling"].pubmed_id == "29395264")
+      CITATIONS["helfrich_coupling"].pubmed_id == "29249289")
 check("hahn_coupling_pediatric in CITATIONS",
       "hahn_coupling_pediatric" in CITATIONS)
 check("hahn_coupling_pediatric PMID correct",
-      CITATIONS["hahn_coupling_pediatric"].pubmed_id == "32499637")
+      CITATIONS["hahn_coupling_pediatric"].pubmed_id == "32579108")
 check("methods_attribution coupling present",
       "coupling" in methods_attribution())
 check("methods_attribution coupling points to helfrich",

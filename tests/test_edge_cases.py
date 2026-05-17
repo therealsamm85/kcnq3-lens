@@ -1300,12 +1300,12 @@ check("Citation 'kurth_pediatric_sw' present in CITATIONS",
       "kurth_pediatric_sw" in CITATIONS)
 
 # 10. PMIDs are exact strings
-check("massimini_sw PMID is '15282274'",
-      CITATIONS["massimini_sw"].pubmed_id == "15282274")
-check("carrier_sw_dev PMID is '20813192'",
-      CITATIONS["carrier_sw_dev"].pubmed_id == "20813192")
-check("kurth_pediatric_sw PMID is '20534927'",
-      CITATIONS["kurth_pediatric_sw"].pubmed_id == "20534927")
+check("massimini_sw PMID is '15295020'",
+      CITATIONS["massimini_sw"].pubmed_id == "15295020")
+check("carrier_sw_dev PMID is '21226772'",
+      CITATIONS["carrier_sw_dev"].pubmed_id == "21226772")
+check("kurth_pediatric_sw PMID is '20926647'",
+      CITATIONS["kurth_pediatric_sw"].pubmed_id == "20926647")
 
 # 11. methods_attribution returns "massimini_sw" for "slow_waves"
 ma = methods_attribution()
@@ -1867,20 +1867,24 @@ except Exception as e:
     check("(11) events not in summary test", False, str(e))
 
 
-# 12. Citations present: staba_hfo, burnos_hfo, kuhnke_scalp_hfo
-_expected_cit_keys = {"staba_hfo", "burnos_hfo", "kuhnke_scalp_hfo"}
+# 12. Citations present: staba_hfo, burnos_hfo, kramer_scalp_hfo
+# (kuhnke_scalp_hfo was removed in v0.18.2 — the cited paper does not exist;
+#  replaced with Kramer et al. 2019 PMID 30907404, a real paper on the same topic)
+_expected_cit_keys = {"staba_hfo", "burnos_hfo", "kramer_scalp_hfo"}
 for _ck in _expected_cit_keys:
     check(f"(12) Citation '{_ck}' present in CITATIONS",
           _ck in CITATIONS)
-check("(12) staba_hfo has PMID 12239031",
+check("(12) staba_hfo has PMID 12364503",
       CITATIONS.get("staba_hfo") is not None
-      and CITATIONS["staba_hfo"].pubmed_id == "12239031")
-check("(12) burnos_hfo has PMID 24747572",
+      and CITATIONS["staba_hfo"].pubmed_id == "12364503")
+check("(12) burnos_hfo has PMID 24722663",
       CITATIONS.get("burnos_hfo") is not None
-      and CITATIONS["burnos_hfo"].pubmed_id == "24747572")
-check("(12) kuhnke_scalp_hfo has PMID 30215099",
-      CITATIONS.get("kuhnke_scalp_hfo") is not None
-      and CITATIONS["kuhnke_scalp_hfo"].pubmed_id == "30215099")
+      and CITATIONS["burnos_hfo"].pubmed_id == "24722663")
+check("(12) kramer_scalp_hfo has PMID 30907404",
+      CITATIONS.get("kramer_scalp_hfo") is not None
+      and CITATIONS["kramer_scalp_hfo"].pubmed_id == "30907404")
+check("(12) kuhnke_scalp_hfo removed (fabricated citation)",
+      "kuhnke_scalp_hfo" not in CITATIONS)
 check("(12) methods_attribution has 'hfo_ripples': 'staba_hfo'",
       methods_attribution().get("hfo_ripples") == "staba_hfo")
 

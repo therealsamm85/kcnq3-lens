@@ -8,17 +8,11 @@ are sensitive biomarkers for cortical network dysfunction.
 Scientific basis
 ----------------
 - Koenig T et al. (2002) Millisecond by millisecond, year by year: normative
-  EEG microstates and developmental stages. NeuroImage 16:41–48.
-  doi:10.1006/nimg.2002.1070  [canonical A/B/C/D templates and norms]
-- Michel CM & Koenig T (2018) EEG microstates as a tool for studying
-  the temporal dynamics of whole-brain neuronal networks: a review.
-  NeuroImage 180:577–593. doi:10.1016/j.neuroimage.2017.11.062
-- Jaime Santana M et al. (2025) EEG microstates as biomarkers of epilepsy.
-  Sci Reports 15, 10982. PMID s41598-025-93385-8
-- Mofrad MH et al. (2024) Microstate dynamics in pediatric epilepsy.
-  Epilepsy & Behavior 156:109784. S1525-5050(24)00110-0
-- Kumral D et al. (2025) Pediatric microstate normative data. PMC13078684.
-  [B coverage 20-30%, D coverage 20-25%]
+  EEG microstates and developmental stages. NeuroImage 16:41–48. PMID 11969316.
+  [canonical A/B/C/D templates]
+- Michel CM & Koenig T (2018) EEG microstates as a tool for studying the
+  temporal dynamics of whole-brain neuronal networks: a review.
+  NeuroImage 180(Pt B):577–593. PMID 29196270.
 
 Canonical microstate topographies (Koenig 2002 convention)
 ----------------------------------------------------------
@@ -29,12 +23,13 @@ D: Fronto-central asymmetry (strong frontal dominance)
 
 DISCLAIMER
 ----------
-EEG microstate analysis on scalp EEG with k=4 is a research metric.
+EEG microstate analysis on scalp EEG with k=4 is a RESEARCH metric.
 The canonical template matching used here is approximate (based on channel
-correlations with idealized templates). Pediatric normative values vary
-substantially by age, methodology, and reference electrode. The values
-cited are from PMC13078684 (Kumral 2025) and should be treated as ROUGH
-GUIDES. Clinical interpretation requires expert EEG review.
+correlations with idealized templates). NO validated pediatric normative
+values exist for microstate coverage at the time of writing — any
+"below/in/above range" interpretation in this module is therefore a
+within-tool convention only. Clinical interpretation requires expert EEG
+review.
 """
 
 from __future__ import annotations
@@ -50,17 +45,22 @@ from ..readers.base import EEGRecording
 
 _DISCLAIMER = (
     "DISCLAIMER: EEG microstate analysis with k=4 is a RESEARCH METRIC. "
-    "Canonical template matching is approximate. Pediatric normative ranges "
-    "(B: 20-30%, D: 20-25%) are from Kumral 2025 (PMC13078684) and vary by "
-    "age and methodology. Do not use standalone for clinical decisions. "
-    "Reference: Koenig 2002 NeuroImage 16:41-48; "
-    "Sci Reports 2025 PMID s41598-025-93385-8; "
-    "Epilepsy & Behavior 2024 S1525-5050(24)00110-0."
+    "Canonical template matching is approximate. NO validated pediatric "
+    "normative ranges exist for microstate coverage; the ranges used by "
+    "this module are tool-convention only. Do not use standalone for "
+    "clinical decisions. Reference: Koenig 2002 (PMID 11969316); "
+    "Michel & Koenig 2018 (PMID 29196270)."
 )
 
 _MS_LABELS = ("A", "B", "C", "D")
 
-# Pediatric normative ranges (PMC13078684, Kumral 2025)
+# Pediatric microstate coverage — TOOL CONVENTION ranges. No validated
+# pediatric normative data exists in the published literature at time of
+# writing; the previous version of this module attributed these ranges to
+# "Kumral 2025 (PMC13078684)" which does not exist (Round 2 hallucination
+# audit). These ranges remain only as a within-tool ranking convention; the
+# "below/in/above" labels they drive must NOT be interpreted as comparison
+# against a published cohort.
 _PEDIATRIC_NORM_COVERAGE: dict[str, tuple[float, float]] = {
     "A": (20.0, 28.0),
     "B": (20.0, 30.0),
@@ -595,16 +595,20 @@ def summarize_microstates(result: MicrostateResult) -> dict:
         for a in _MS_LABELS for b in _MS_LABELS if a != b
     }
 
-    # Check against pediatric norms
+    # Compare coverage against within-tool default ranges. The labels
+    # 'below_tool_range' / 'above_tool_range' / 'within_tool_range' make
+    # it explicit that these are NOT comparisons against a published
+    # pediatric normative cohort (no such cohort exists at the time of
+    # writing — see module-level audit note).
     norm_flags: dict[str, str] = {}
     for ms, (lo, hi) in _PEDIATRIC_NORM_COVERAGE.items():
         cov = result.coverage_pct.get(ms, 0.0)
         if cov < lo:
-            norm_flags[ms] = f"below_norm (<{lo}%)"
+            norm_flags[ms] = f"below_tool_range (<{lo}%)"
         elif cov > hi:
-            norm_flags[ms] = f"above_norm (>{hi}%)"
+            norm_flags[ms] = f"above_tool_range (>{hi}%)"
         else:
-            norm_flags[ms] = "within_norm"
+            norm_flags[ms] = "within_tool_range"
 
     return {
         "method": result.method,
@@ -614,8 +618,8 @@ def summarize_microstates(result: MicrostateResult) -> dict:
         "occurrence_per_sec": {k: round(v, 3) for k, v in result.occurrence_per_sec.items()},
         "dominant_microstate": dominant,
         "transition_probabilities": trans_str,
-        "pediatric_norm_flags": norm_flags,
-        "pediatric_norm_reference": {
+        "tool_range_flags": norm_flags,
+        "tool_range_reference": {
             ms: {"coverage_pct_range": list(rng)}
             for ms, rng in _PEDIATRIC_NORM_COVERAGE.items()
         },

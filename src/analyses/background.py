@@ -35,10 +35,11 @@ _DISCLAIMER = (
 
 _DISCLAIMER_ZSCORE = (
     "PDR z-score uses age-normative center from _PDR_AGE_NORMS and assumes "
-    "SD=1 Hz (TOOL CONVENTION, not a validated population parameter). "
-    "Reference: Neurology 2024 PMID 38729071 (quantitative PDR vs categorical). "
+    "SD=1 Hz (TOOL CONVENTION, not a validated population parameter — no "
+    "published pediatric population SD exists; the z-score is therefore a "
+    "within-tool ranking, not a comparison to a normative cohort). "
     "Asymmetry index uses alpha-band power (8-13 Hz) on O1+P3 vs O2+P4. "
-    "Threshold for 'marked_asymmetric' is |AI| > 0.20 (standard convention)."
+    "Threshold for 'marked_asymmetric' is |AI| > 0.20 (tool convention)."
 )
 
 
@@ -85,7 +86,9 @@ def _pdr_normative(age: float | None) -> tuple[float, float] | None:
 
 _LH_ASYMMETRY_CHANNELS = ("O1", "P3")
 _RH_ASYMMETRY_CHANNELS = ("O2", "P4")
-_PDR_ZSCORE_SD = 1.0  # TOOL CONVENTION: assumed SD in Hz (Neurology 2024 PMID 38729071)
+_PDR_ZSCORE_SD = 1.0  # TOOL CONVENTION: assumed SD in Hz. No validated pediatric
+                      # population SD exists; the resulting z-score is a within-tool
+                      # ranking metric, not a normative-cohort comparison.
 _ASYMMETRY_MARKED_THRESHOLD = 0.20
 
 

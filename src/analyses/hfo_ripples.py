@@ -2,12 +2,12 @@
 
 High-frequency oscillations (HFOs) in the ripple band (80–250 Hz) have been
 proposed as a biomarker of epileptogenic tissue. Staba et al. 2002 (PMID
-12239031) originally validated energy-based detection in intracranial recordings
+12364503) originally validated energy-based detection in intracranial recordings
 of hippocampus and entorhinal cortex. Scalp recordings of HFOs are feasible
-(Kuhnke et al. 2018, PMID 30215099) but technically challenging due to
+(Kramer et al. 2019, PMID 30907404) but technically challenging due to
 muscle/EMG contamination in the same frequency band.
 
-Frequency-specificity check (Burnos et al. 2014, PMID 24747572): true HFOs
+Frequency-specificity check (Burnos et al. 2014, PMID 24722663): true HFOs
 show substantially more power in the ripple band (80–250 Hz) than in the
 high-gamma/fast-ripple band (250–500 Hz). Events where the power ratio falls
 below 2 are rejected as likely broad-band transients (muscle, spike-ringing).
@@ -19,9 +19,9 @@ output numbers against adult intracranial norms.
 
 References
 ----------
-Staba RJ et al. 2002      PMID 12239031  original energy-based HFO detector
-Burnos S et al. 2014      PMID 24747572  frequency-specificity criterion
-Kuhnke N et al. 2018      PMID 30215099  scalp HFOs in childhood epilepsy
+Staba RJ et al. 2002      PMID 12364503  original energy-based HFO detector
+Burnos S et al. 2014      PMID 24722663  frequency-specificity criterion
+Kramer MA et al. 2019     PMID 30907404  scalp spike ripples in childhood epilepsy
 """
 
 from __future__ import annotations
@@ -321,9 +321,10 @@ def compute_hfo_ripples(
     if len(bg_rms) == 0:
         bg_rms = rms
     threshold = 5.0 * float(np.std(bg_rms))
-    # Minimum absolute floor: 1 µV (Kuhnke et al. 2018, PMID 30215099 reports
-    # scalp ripple amplitudes typically 1-3 µV). Floor at 1 µV prevents
-    # sub-physiological detections from filter-edge artifacts.
+    # Minimum absolute floor: 1 µV. Floor prevents sub-physiological
+    # detections from filter-edge artifacts. (Scalp ripple amplitude ranges
+    # are described in Kramer et al. 2019, PMID 30907404, though the
+    # specific 1 µV value here is a tool-convention conservative floor.)
     _MIN_THRESHOLD_UV = 1.0
     threshold = max(threshold, _MIN_THRESHOLD_UV)
     if threshold <= 0 or not math.isfinite(threshold):

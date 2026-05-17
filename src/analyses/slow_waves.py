@@ -67,9 +67,9 @@ using the formula above.
 
 References
 ----------
-Massimini M et al. 2004 PMID 15282274
-Carrier J et al. 2011 PMID 20813192
-Kurth S et al. 2010  PMID 20534927
+Massimini M et al. 2004 PMID 15295020
+Carrier J et al. 2011 PMID 21226772
+Kurth S et al. 2010  PMID 20926647
 Vallat R & Walker MP 2021 PMID 34648426
 """
 

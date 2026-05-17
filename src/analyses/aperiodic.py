@@ -9,13 +9,10 @@ Scientific basis
 ----------------
 - Donoghue T et al. (2020) Parameterizing neural power spectra into periodic
   and aperiodic components. Nature Neuroscience 23:1655–1665. PMID 33230329.
-  (fooof / specparam method)
-- Gao R et al. (2017) Inferring synaptic excitation/inhibition balance from
-  field potentials. NeuroImage 158:70–78. doi:10.1016/j.neuroimage.2017.06.078
-- Donoghue T et al. (2024) Aperiodic Activity Indexes Neural Hyperexcitability.
-  eNeuro 2024. https://doi.org/10.1523/ENEURO.0175-24.2024
-- Panzeri S et al. (2024) Aperiodic neural activity as a biomarker for epilepsy.
-  Brain Communications 6:fcae231. https://doi.org/10.1093/braincomms/fcae231
+  (fooof / specparam method — the implementation used here.)
+- Cellier D et al. (2021) The development of theta and alpha neural
+  oscillations from ages 3 to 24 years. PMID 34174512. (Pediatric
+  developmental EEG context; does NOT provide aperiodic-exponent norms.)
 
 KCNQ3-GoF hypothesis: gain-of-function KCNQ3 variants increase M-current,
 reducing neuronal excitability → expected higher χ (steeper slope) compared
@@ -23,20 +20,23 @@ to typical controls. This is the OPPOSITE direction of classical epilepsy
 hyperexcitability (which shows flatter slopes), consistent with the
 channelopathy's complex gain-of-function phenotype.
 
-Pediatric reference values (TOOL CONVENTION)
---------------------------------------------
-The values below are adapted from Donoghue 2020 (adult) and the limited
-pediatric literature (Cellier D et al. 2021, Donoghue T 2020 supplementary).
-Pediatric norms are insufficiently established — treat these as ROUGH GUIDES
-only. Pre/post within-patient comparison is far more informative than absolute
-interpretation against these normative values.
+Pediatric reference values (TOOL CONVENTION — see audit note below)
+-------------------------------------------------------------------
+NO validated pediatric aperiodic-exponent norms exist in the published
+literature at the time of writing. The mean/SD values used in this module
+are within-tool defaults that drive a within-tool ranking only — they
+MUST NOT be interpreted as comparison against a normative pediatric
+cohort. The previous version of this docstring cited "Donoghue 2024 eNeuro"
+and "Panzeri 2024 Brain Communications"; the v0.18.2 anti-hallucination
+audit could not verify either reference, so they have been removed. The
+Gao 2017 NeuroImage citation was also unverified and has been removed.
 
-  Wake:  mean=1.25, SD=0.30  (range 1.0–1.5 in controls)
-  N2:    mean=1.75, SD=0.30  (range 1.5–2.0 in controls)
-  N3:    mean=2.00, SD=0.30  (range 1.5–2.5 in controls)
+  Wake:  mean=1.25, SD=0.30  (TOOL CONVENTION — not a published norm)
+  N2:    mean=1.75, SD=0.30  (TOOL CONVENTION — not a published norm)
+  N3:    mean=2.00, SD=0.30  (TOOL CONVENTION — not a published norm)
 
-Reference: Donoghue 2020 PMID 33230329 (adult); Cellier 2021
-(doi:10.1016/j.neuroimage.2021.118141) for pediatric developmental trends.
+Pre/post within-patient comparison is far more informative than absolute
+interpretation against these tool-convention values.
 """
 
 from __future__ import annotations
@@ -49,25 +49,29 @@ from scipy.signal import welch, find_peaks
 
 from ..readers.base import EEGRecording
 
-# ─── Pediatric reference values (TOOL CONVENTION) ────────────────────────────
-# Source: Donoghue 2020 (adult) + limited pediatric data. SD assumed = 0.30
-# for all states. Document this assumption prominently.
+# ─── Pediatric reference values (TOOL CONVENTION — NOT published norms) ─────
+# IMPORTANT: NO validated pediatric aperiodic-exponent normative cohort
+# exists in the published literature. The mean/SD pairs below are within-tool
+# defaults only; the resulting z-scores are a within-tool ranking metric and
+# must NOT be presented to clinicians as comparison against a normative
+# cohort. See the module-level docstring for the v0.18.2 audit note.
 _PEDIATRIC_NORMS: dict[str, tuple[float, float]] = {
-    # (mean, sd)
+    # (mean, sd) — TOOL CONVENTION only, not published norms
     "wake": (1.25, 0.30),
     "n2":   (1.75, 0.30),
     "n3":   (2.00, 0.30),
 }
 
 _DISCLAIMER = (
-    "DISCLAIMER: Pediatric aperiodic exponent reference values are based on "
-    "ADULT literature (Donoghue 2020, PMID 33230329) and limited developmental "
-    "data. The SD=0.30 assumption is a TOOL CONVENTION, not a validated "
-    "pediatric norm. Pre/post within-patient comparison is more informative "
-    "than interpretation against absolute normative z-scores. "
-    "Reference: Donoghue 2020 Nature Neuroscience 23:1655-1665; "
-    "eNeuro 2024 aperiodic hyperexcitability paper; "
-    "Brain Communications 2024 fcae231."
+    "DISCLAIMER: The aperiodic-exponent 'pediatric_norm_z_scores' field is "
+    "computed against within-tool default mean/SD values — there is NO "
+    "validated pediatric aperiodic-exponent normative cohort in the "
+    "published literature. The z-scores are therefore a within-tool "
+    "ranking metric, NOT a comparison against a normative population. "
+    "Pre/post within-patient comparison is the only interpretation this "
+    "module supports. Reference: Donoghue 2020 (PMID 33230329) for the "
+    "FOOOF / specparam method used here; no pediatric-norm reference is "
+    "claimed for the absolute values."
 )
 
 # Fit range and peak exclusion zone (in Hz)

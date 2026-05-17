@@ -147,8 +147,8 @@ CITATIONS: dict[str, Citation] = {
             "The sleep slow oscillation as a traveling wave. "
             "J Neurosci 2004;24(31):6862-6870."
         ),
-        pubmed_id="15282274",
-        url="https://pubmed.ncbi.nlm.nih.gov/15282274/",
+        pubmed_id="15295020",
+        url="https://pubmed.ncbi.nlm.nih.gov/15295020/",
         note=(
             "Foundational slow-wave detection criteria: negative peak, "
             "positive peak, and peak-to-peak amplitude thresholds."
@@ -163,8 +163,8 @@ CITATIONS: dict[str, Citation] = {
             "Sleep slow wave changes during the middle years of life. "
             "Eur J Neurosci 2011;33(4):758-766."
         ),
-        pubmed_id="20813192",
-        url="https://pubmed.ncbi.nlm.nih.gov/20813192/",
+        pubmed_id="21226772",
+        url="https://pubmed.ncbi.nlm.nih.gov/21226772/",
         note=(
             "Age-related decline in slow-wave amplitude and density across "
             "middle adulthood. No pediatric norms included."
@@ -179,8 +179,8 @@ CITATIONS: dict[str, Citation] = {
             "of life: a high-density sleep electroencephalogram study. "
             "J Neurosci 2010;30(40):13211-13219."
         ),
-        pubmed_id="20534927",
-        url="https://pubmed.ncbi.nlm.nih.gov/20534927/",
+        pubmed_id="20926647",
+        url="https://pubmed.ncbi.nlm.nih.gov/20926647/",
         note=(
             "Developmental topography of slow-wave activity from childhood "
             "to early adulthood (ages 2–20, high-density EEG). "
@@ -196,8 +196,8 @@ CITATIONS: dict[str, Citation] = {
             "recorded in human epileptic hippocampus and entorhinal cortex. "
             "J Neurophysiol 2002;88(4):1743-1752."
         ),
-        pubmed_id="12239031",
-        url="https://pubmed.ncbi.nlm.nih.gov/12239031/",
+        pubmed_id="12364503",
+        url="https://pubmed.ncbi.nlm.nih.gov/12364503/",
         note=(
             "Original energy-based HFO detector; ripple (80–250 Hz) and "
             "fast-ripple (250–500 Hz) bands defined; intracranial recording."
@@ -207,31 +207,33 @@ CITATIONS: dict[str, Citation] = {
         key="burnos_hfo",
         short="Burnos et al. 2014",
         full=(
-            "Burnos S, Frauscher B, Zelmann R, Haegelen C, Sarnthein J, "
-            "Gotman J. Human intracranial high frequency oscillations (HFOs) "
-            "detected during NREM sleep mirror the seizure onset zone. "
-            "Clin Neurophysiol 2014;125(3):532-540."
+            "Burnos S, Hilfiker P, Sürücü O, Scholkmann F, Krayenbühl N, "
+            "Grunwald T, Sarnthein J. Human intracranial high frequency "
+            "oscillations (HFOs) detected by automatic time-frequency analysis. "
+            "PLoS One 2014;9(4):e94381."
         ),
-        pubmed_id="24747572",
-        url="https://pubmed.ncbi.nlm.nih.gov/24747572/",
+        pubmed_id="24722663",
+        url="https://pubmed.ncbi.nlm.nih.gov/24722663/",
         note=(
-            "Frequency-specificity criterion: true HFOs have ripple-band power "
-            "≥2× high-band power; rejects broad-band transients."
+            "Automatic HFO detection using time-frequency (Stockwell-transform) "
+            "analysis; reports >90% specificity for epileptogenic tissue."
         ),
     ),
-    "kuhnke_scalp_hfo": Citation(
-        key="kuhnke_scalp_hfo",
-        short="Kuhnke et al. 2018",
+    "kramer_scalp_hfo": Citation(
+        key="kramer_scalp_hfo",
+        short="Kramer et al. 2019",
         full=(
-            "Kuhnke N, Schönberger E, Rebenklau R, Kiess W, Merkenschlager A, "
-            "Bernhard MK. Spike ripples and fast ripples in childhood epilepsy "
-            "with centrotemporal spikes. Clin Neurophysiol 2018;129(12):2450-2456."
+            "Kramer MA, Ostrowski LM, Song DY, Thorn EL, Stoyell SM, "
+            "Parnes M, Chinappen D, Xiao G, Eden UT, Staley KJ, Stufflebeam SM, "
+            "Chu CJ. Scalp recorded spike ripples predict seizure risk in "
+            "childhood epilepsy better than spikes. Brain 2019;142(5):1296-1309."
         ),
-        pubmed_id="30215099",
-        url="https://pubmed.ncbi.nlm.nih.gov/30215099/",
+        pubmed_id="30907404",
+        url="https://pubmed.ncbi.nlm.nih.gov/30907404/",
         note=(
-            "Scalp HFOs in childhood epilepsy with centrotemporal spikes; "
-            "demonstrates feasibility of scalp-level ripple detection in pediatric EEG."
+            "Scalp-recorded spike ripples in childhood epilepsy; demonstrates "
+            "feasibility of pediatric scalp ripple detection and a predictive "
+            "association with seizure risk."
         ),
     ),
     "helfrich_coupling": Citation(
@@ -242,8 +244,8 @@ CITATIONS: dict[str, Citation] = {
             "Old Brains Come Uncoupled in Sleep: Slow Wave-Spindle Synchrony, "
             "Brain Atrophy, and Forgetting. Neuron 2018;97(1):221-230.e4."
         ),
-        pubmed_id="29395264",
-        url="https://pubmed.ncbi.nlm.nih.gov/29395264/",
+        pubmed_id="29249289",
+        url="https://pubmed.ncbi.nlm.nih.gov/29249289/",
         note=(
             "SO-spindle coupling and memory consolidation in aging; "
             "validates PLV as coupling metric in adults."
@@ -258,8 +260,8 @@ CITATIONS: dict[str, Citation] = {
             "Electroencephalogram Interpretation. JAMA Neurol "
             "2020;77(1):103-108."
         ),
-        pubmed_id="32049322",
-        url="https://pubmed.ncbi.nlm.nih.gov/32049322/",
+        pubmed_id="31633740",
+        url="https://pubmed.ncbi.nlm.nih.gov/31633740/",
         note=(
             "SpikeNet ResNet IED classifier trained on 9,571 adult EEGs. "
             "Adult-validated; pediatric sensitivity is lower. "
@@ -275,8 +277,8 @@ CITATIONS: dict[str, Citation] = {
             "Slow oscillation-spindle coupling predicts enhanced memory formation "
             "from childhood to adolescence. Elife 2020;9:e53730."
         ),
-        pubmed_id="32499637",
-        url="https://pubmed.ncbi.nlm.nih.gov/32499637/",
+        pubmed_id="32579108",
+        url="https://pubmed.ncbi.nlm.nih.gov/32579108/",
         note=(
             "Paediatric SO-spindle coupling, ages 8–19. PLV rises from ~0.15 "
             "(age 8) toward adult levels during adolescence. "
