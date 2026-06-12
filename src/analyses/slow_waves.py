@@ -400,25 +400,81 @@ def compute_slow_waves(
     # resolved_channel is always set to the actual stored channel name (not the
     # requested name), so "fz" → "Fz" when the recording stores "Fz".
     channel_upper = channel.upper()
-    ch_idx = rec.channel_index(channel)
-    resolved_channel = rec.channel_names[ch_idx] if ch_idx is not None else channel
+
+    # v0.18.4: channel-liveness guard. A present-but-dead channel (e.g. an
+    # unplugged electrode that the long-form NK reader still maps to a name)
+    # silently yields 0 slow waves if we run on it. Build the candidate chain
+    # and pick the first channel that is actually live (non-flat). Without
+    # this, FA06301E's "Fz" maps to a 0.4 µV flat trace and the detector
+    # reports a false slow-wave deficit.
+    def _channel_is_live(idx: int) -> bool:
+        """Sample a few epochs; return False if the channel is essentially flat."""
+        try:
+            n = rec.n_epochs
+            sample_eps = [n // 4, n // 2, (3 * n) // 4] if n >= 4 else list(range(n))
+            stds = []
+            for ep in sample_eps:
+                d = rec.read_epoch(ep, 30.0)
+                if d is None:
+                    continue
+                stds.append(float(d[idx].std()))
+            if not stds:
+                return True  # can't sample → don't block
+            # < 1.5 µV trimmed std over deep-sleep-capable windows = dead/flat.
+            # (Real EEG, even quiet wake, sits well above this.)
+            return float(np.median(stds)) >= 1.5
+        except Exception:
+            return True  # never let the liveness probe crash detection
+
+    # Ordered, de-duplicated candidate names: requested first, then fallbacks.
+    _seen_up = set()
+    candidate_names = []
+    for nm in (channel, "Fz", "Cz", "C3", "C4", "Pz"):
+        up = nm.upper()
+        if up not in _seen_up:
+            _seen_up.add(up)
+            candidate_names.append(nm)
+
+    ch_idx = None
+    resolved_channel = channel
+    first_present_idx = None
+    first_present_name = channel
+    for nm in candidate_names:
+        idx = rec.channel_index(nm)
+        if idx is None:
+            continue
+        if first_present_idx is None:
+            first_present_idx = idx
+            first_present_name = rec.channel_names[idx]
+        if _channel_is_live(idx):
+            ch_idx = idx
+            resolved_channel = rec.channel_names[idx]
+            break
+
     if ch_idx is None:
-        for fallback in ("Fz", "Cz", "C3"):
-            if fallback.upper() == channel_upper:
-                continue
-            ch_idx = rec.channel_index(fallback)
-            if ch_idx is not None:
-                resolved_channel = rec.channel_names[ch_idx]
+        # No named candidate was live — scan all EEG channels for a live one.
+        for idx in rec.eeg_channel_indices:
+            if _channel_is_live(idx):
+                ch_idx = idx
+                resolved_channel = rec.channel_names[idx]
+                notes.append("fell_back_to_live_eeg_channel")
                 break
+
     if ch_idx is None:
-        # Last resort: first EEG channel
-        if rec.eeg_channel_indices:
+        # Everything looks flat — proceed on the first present candidate (or
+        # first EEG channel) so behaviour is unchanged for genuinely odd files,
+        # but flag it loudly so the 0-result isn't read as biology.
+        if first_present_idx is not None:
+            ch_idx = first_present_idx
+            resolved_channel = first_present_name
+        elif rec.eeg_channel_indices:
             ch_idx = rec.eeg_channel_indices[0]
             resolved_channel = rec.channel_names[ch_idx]
         else:
             raise ValueError(
                 "none of preferred channels available for slow-wave detection."
             )
+        notes.append("no_live_channel_found_results_may_be_artifact")
 
     # --- Determine method ----------------------------------------------------
     method = "yasa" if _yasa_available() else "heuristic"

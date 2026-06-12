@@ -28,6 +28,21 @@ from .base import EEGRecording
 # Header constants for the common EEG-1200A layout seen in NKT EEG2100 systems
 _DEFAULT_DATA_START = 0x38E3
 _DEFAULT_N_CH_FILE = 29
+
+# ADC→µV calibration for EEG channels (v0.18.4).
+# The reverse-engineered long-form reader decodes offset-binary int16 to signed
+# ADC counts but historically returned those counts directly, leaving the
+# fallback path ~10x mis-scaled vs the MNE path (which applies a gain). The
+# Nihon Kohden EEG-1200A fixed calibration for standard EEG channels is
+# phys_min=-3200 µV, phys_max=3199.902 µV over the 16-bit digital range — i.e.
+# the same constants MNE's nihon reader uses (mne/io/nihon/nihon.py). The
+# per-count gain is therefore (phys_max - phys_min) / 65535. Applying it makes
+# the fallback path produce µV consistent with the MNE path (verified: the 24h
+# FA06301E file lands at ~27 µV median per-channel std, matching the four
+# MNE-read short recordings at 25-47 µV).
+_NK_EEG_PHYS_MIN_UV = -3200.0
+_NK_EEG_PHYS_MAX_UV = 3199.902
+_NK_ADC_TO_UV = (_NK_EEG_PHYS_MAX_UV - _NK_EEG_PHYS_MIN_UV) / 65535.0  # ≈ 0.09766 µV/count
 _DEFAULT_SFREQ = 200
 _DEFAULT_CH_NAMES_29 = [
     "Fp1", "F4", "F3", "C4", "C3", "P4", "P3", "O2", "O1",
@@ -214,7 +229,12 @@ def read_nihon_kohden(
         u16 = np.frombuffer(buf, dtype="<u2")
         # Offset-binary to signed int16
         s16 = (u16.astype(np.int32) + 0x8000).astype(np.int16)
-        return s16.reshape(-1, rec.n_channels_in_file).T.astype(np.float32)
+        # v0.18.4: scale signed ADC counts to µV so the fallback path matches
+        # the MNE path (which already returns µV). Without this the long-form
+        # 24h recording was ~10x mis-scaled, breaking YASA amplitude-threshold
+        # detectors (spindles, slow waves) and any µV-based interpretation.
+        counts = s16.reshape(-1, rec.n_channels_in_file).T.astype(np.float32)
+        return counts * np.float32(_NK_ADC_TO_UV)
 
     return EEGRecording(
         path=path,
