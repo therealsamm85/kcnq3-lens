@@ -82,7 +82,15 @@ def compute_spike_morphology(
     _cands = [target_channel] + [
         c for c in ("Pz", "Cz", "C3", "C4", "Fz") if c.upper() != target_channel.upper()
     ]
-    ch_idx, resolved_name, _ = rec.resolve_live_channel(_cands)
+    if hasattr(rec, "resolve_live_channel"):
+        ch_idx, resolved_name, _ = rec.resolve_live_channel(_cands)
+    else:
+        ch_idx, resolved_name = None, None
+        for _nm in _cands:
+            _i = rec.channel_index(_nm)
+            if _i is not None:
+                ch_idx, resolved_name = _i, _nm
+                break
     if ch_idx is None:
         raise ValueError("No suitable channel for morphology analysis.")
     target_channel = resolved_name

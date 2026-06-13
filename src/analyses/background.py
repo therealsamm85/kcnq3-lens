@@ -185,7 +185,7 @@ def compute_background_power(
         i = rec.channel_index(ch)
         if i is None:
             continue
-        if rec.is_channel_live(i):
+        if not hasattr(rec, "is_channel_live") or rec.is_channel_live(i):
             pc_idx.append(i)
             pc_names.append(ch)
         else:

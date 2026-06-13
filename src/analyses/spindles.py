@@ -285,10 +285,20 @@ def compute_spindle_density(
         YASA's amplitude thresholds expect µV-scaled input.
     """
     # Resolve channel — v0.18.5: liveness-aware (skip present-but-dead channels).
+    # Falls back to the plain channel_index chain for minimal rec-like objects
+    # (e.g. test doubles) that don't implement resolve_live_channel.
     _cands = [channel] + [
         c for c in ("Cz", "Pz", "Fz", "C3", "C4") if c.upper() != channel.upper()
     ]
-    ch_idx, resolved_name, _ = rec.resolve_live_channel(_cands)
+    if hasattr(rec, "resolve_live_channel"):
+        ch_idx, resolved_name, _ = rec.resolve_live_channel(_cands)
+    else:
+        ch_idx, resolved_name = None, None
+        for _nm in _cands:
+            _i = rec.channel_index(_nm)
+            if _i is not None:
+                ch_idx, resolved_name = _i, _nm
+                break
     if ch_idx is None:
         raise ValueError("No central EEG channel found for spindle detection.")
     channel = resolved_name

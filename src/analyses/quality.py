@@ -31,7 +31,11 @@ class ChannelQuality:
     is_saturated: bool
     is_extreme: bool
     median_amplitude: float
-    flag: str       # "good" | "flat" | "saturated" | "extreme" | "marginal"
+    flag: str       # "good" | "flat" | "saturated" | "extreme" | "noisy" | "uncorrelated"
+    # v0.18.6 (PREP-style relative detection):
+    is_noisy_outlier: bool = False  # amplitude >> the across-channel median
+    is_uncorrelated: bool = False   # low mean correlation with other channels
+    mean_abs_corr: float = 1.0      # mean |Pearson r| vs all other EEG channels
 
 
 @dataclass
@@ -51,15 +55,28 @@ def assess_quality(
     start_epoch: int = 0,
     end_epoch: int | None = None,
     epoch_seconds: float = 30.0,
-    flat_threshold: float = 5.0,           # ADC/µV std — below this is "flat"
-    extreme_threshold_p99: float = 50000,  # 99th-percentile p-p above this = extreme
-    saturation_threshold_p99: float = 32700,  # close to int16 max = clipping
+    flat_threshold: float = 1.5,           # µV std — below this is "flat" (dead/unplugged)
+    extreme_threshold_median_ptp: float = 1500.0,  # SUSTAINED median p-p (µV) = extreme
+    saturation_threshold_p99: float = 3150.0,  # near NK ±3200 µV physical max = clipping
     artifact_power_multiplier: float = 5.0,
+    noisy_outlier_multiplier: float = 4.0,  # amplitude > N× across-channel median = noisy
+    uncorrelated_threshold: float = 0.40,   # MAX |r| with any other ch below this = uncorrelated
+    corr_sample_epochs: int = 60,
 ) -> QualityResult:
     """Run QC checks on a recording.
 
     Returns a QualityResult with per-channel flags, per-epoch artifact count,
     and an overall A/B/C/D grade.
+
+    v0.18.6: thresholds are now in µV (the reader path delivers µV after the
+    0.18.4 calibration fix; the previous ADC-unit thresholds of 32700/50000
+    never fired on µV data and silently disabled saturation/extreme
+    detection). Adds PREP-style relative detection: a channel whose amplitude
+    is N× the across-channel median is flagged "noisy", and a channel whose
+    mean absolute correlation with the others is very low is flagged
+    "uncorrelated" — this is what catches a noisy reference channel (e.g. the
+    FA06301E Pz that sat at ~950 µV in wake while neighbours were ~50 µV) that
+    absolute thresholds miss.
     """
     if end_epoch is None:
         end_epoch = rec.n_epochs
@@ -79,6 +96,13 @@ def assess_quality(
     broad_pow_per_epoch: np.ndarray = np.zeros(n_eps)
     muscle_pow_per_epoch: np.ndarray = np.zeros(n_eps)
 
+    # v0.18.6: accumulate an inter-channel correlation matrix on a sampled
+    # subset of epochs (full 24 h would be wasteful). Each sampled epoch
+    # contributes its channel×channel correlation; we average across samples.
+    corr_accum = np.zeros((n_chs, n_chs))
+    corr_count = 0
+    _sample_stride = max(1, n_eps // max(1, corr_sample_epochs))
+
     for i, (ep, d) in enumerate(rec.iter_epochs(
         epoch_seconds=epoch_seconds, start=start_epoch, end=end_epoch
     )):
@@ -92,24 +116,74 @@ def assess_quality(
         broad_pow_per_epoch[i] = float(np.mean(broad ** 2))
         muscle_pow_per_epoch[i] = float(np.mean(muscle ** 2))
 
+        if n_chs >= 3 and (i % _sample_stride == 0):
+            # Correlate on band-passed data (1-40 Hz): raw channels carry
+            # per-channel DC offset / slow drift that depresses correlation
+            # even for good neighbours and would over-flag awake EEG.
+            filt = sosfiltfilt(sos_broad, chans, axis=1)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                cmat = np.corrcoef(filt)
+            if np.all(np.isfinite(cmat)):
+                corr_accum += np.abs(cmat)
+                corr_count += 1
+
+    # Correlation of each channel vs all others (exclude self-diagonal).
+    # We flag on the MAX correlation with any other channel (PREP-style): a
+    # good channel correlates highly with at least one neighbour, a dead or
+    # junk-reference channel correlates with none. Mean correlation is kept
+    # only for reporting — it is naturally low (~0.2-0.4) even for good EEG
+    # with focal/referential activity, so it is a poor flag basis.
+    if corr_count > 0 and n_chs >= 3:
+        mean_corr_mat = corr_accum / corr_count
+        np.fill_diagonal(mean_corr_mat, np.nan)
+        ch_mean_corr = np.nanmean(mean_corr_mat, axis=1)
+        ch_max_corr = np.nanmax(mean_corr_mat, axis=1)
+    else:
+        ch_mean_corr = np.ones(n_chs)
+        ch_max_corr = np.ones(n_chs)
+
+    # Across-channel median amplitude, for relative-outlier detection. Use the
+    # median per-channel std (robust to occasional artifact epochs).
+    per_ch_median_std = np.median(ch_stds, axis=1)
+    cohort_median_std = float(np.median(per_ch_median_std)) or 1e-9
+
     # Per-channel classification
     qualities: list[ChannelQuality] = []
     for j, c in enumerate(eeg_idx):
         name = rec.channel_names[c]
-        median_std = float(np.median(ch_stds[j]))
-        p99_ptp = float(np.percentile(ch_ptp_p99[j], 99))
+        median_std = float(per_ch_median_std[j])
+        median_ptp = float(np.median(ch_ptp_p99[j]))
         median_abs_max = float(np.median(ch_abs_max[j]))
+        mean_corr = float(ch_mean_corr[j]) if np.isfinite(ch_mean_corr[j]) else 1.0
+        max_corr = float(ch_max_corr[j]) if np.isfinite(ch_max_corr[j]) else 1.0
 
         is_flat = median_std < flat_threshold
         is_saturated = median_abs_max > saturation_threshold_p99
-        is_extreme = p99_ptp > extreme_threshold_p99 and not is_saturated
+        # Extreme = SUSTAINED high amplitude (median p-p), not a single
+        # transient (a p99 measure flagged clean channels on one artifact epoch).
+        is_extreme = median_ptp > extreme_threshold_median_ptp and not is_saturated
+        is_noisy_outlier = (
+            not is_flat
+            and median_std > noisy_outlier_multiplier * cohort_median_std
+        )
+        # Uncorrelated: best correlation with ANY other channel is low. A flat
+        # channel is trivially uncorrelated, so only flag non-flat channels.
+        is_uncorrelated = (
+            not is_flat and n_chs >= 6 and max_corr < uncorrelated_threshold
+        )
 
+        # Priority: dead > clipping > extreme amplitude > noisy outlier >
+        # uncorrelated > good. (Most actionable defect wins the label.)
         if is_flat:
             flag = "flat"
         elif is_saturated:
             flag = "saturated"
         elif is_extreme:
             flag = "extreme"
+        elif is_noisy_outlier:
+            flag = "noisy"
+        elif is_uncorrelated:
+            flag = "uncorrelated"
         else:
             flag = "good"
 
@@ -120,6 +194,9 @@ def assess_quality(
             is_extreme=is_extreme,
             median_amplitude=float(np.median(ch_ptp_p99[j])),
             flag=flag,
+            is_noisy_outlier=is_noisy_outlier,
+            is_uncorrelated=is_uncorrelated,
+            mean_abs_corr=round(mean_corr, 3),
         ))
 
     n_good = sum(1 for q in qualities if q.flag == "good")
@@ -167,6 +244,23 @@ def assess_quality(
             f"Only {pct_usable:.0f}% of epochs are clean. "
             "Spike-burden and rate metrics may be inflated by artifact."
         )
+    # v0.18.6: surface noisy/uncorrelated channels explicitly — these are the
+    # ones that absolute thresholds miss but that corrupt averaged metrics
+    # (PDR posterior average, topography). Analyses should avoid them.
+    _noisy = [q.name for q in qualities if q.flag == "noisy"]
+    _uncorr = [q.name for q in qualities if q.flag == "uncorrelated"]
+    if _noisy:
+        warnings.append(
+            f"Channel(s) {', '.join(_noisy)} have abnormally high amplitude "
+            "vs the rest (possible reference/electrode problem) — exclude from "
+            "averaged metrics."
+        )
+    if _uncorr:
+        warnings.append(
+            f"Channel(s) {', '.join(_uncorr)} are poorly correlated with the "
+            "rest (likely bad contact or a reference channel) — interpret with "
+            "caution."
+        )
 
     return QualityResult(
         channel_qualities=qualities,
@@ -190,8 +284,12 @@ def summarize_quality(result: QualityResult) -> dict:
         "n_total_epochs": result.n_total_epochs,
         "channel_flags": [
             {"name": q.name, "flag": q.flag,
-             "median_amplitude": round(q.median_amplitude, 0)}
+             "median_amplitude": round(q.median_amplitude, 0),
+             "mean_abs_corr": q.mean_abs_corr}
             for q in result.channel_qualities
+        ],
+        "bad_channels": [
+            q.name for q in result.channel_qualities if q.flag != "good"
         ],
         "warnings": result.warnings,
     }
