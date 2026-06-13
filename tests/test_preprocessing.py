@@ -110,6 +110,43 @@ check("good channel not swamped by excluded junk channel (C3 std < 200µV)",
 check("source recording unchanged (still has _full_data)",
       rec._full_data is not None)
 
+# ─── Wave 3: ocular (blink) artifact detection ──────────────────────────────
+print("\n── Wave 3: ocular / blink artifact detection ──────────────────────")
+from src.preprocessing.ocular import (
+    detect_ocular_artifact, clean_epoch_indices, summarize_ocular,
+)
+
+sf3 = 100.0
+n3 = int(120 * sf3)  # 4 epochs of 30s
+names3 = ["Fp1", "Fp2", "C3", "O1", "O2"]
+rng3 = np.random.RandomState(1)
+d3 = 15.0 * rng3.randn(5, n3).astype(np.float32)
+# Inject big slow blinks on Fp1/Fp2 in epochs 0 and 2 only.
+def _blink(center, width, amp):
+    t = np.arange(n3)
+    return amp * np.exp(-0.5 * ((t - center) / width) ** 2)
+for c in (300, 1200, 6300, 7200):  # epochs 0 (0-3000) and 2 (6000-9000)
+    b = _blink(c, 25, 200.0)
+    d3[0] += b
+    d3[1] += b
+rec3 = _make_rec(d3, names3, sf3)
+
+oc = detect_ocular_artifact(rec3, blink_amplitude_uv=75.0)
+check("ocular available with Fp1/Fp2 present", oc.available)
+check("blinks detected (>=4)", oc.n_blinks >= 4, f"n={oc.n_blinks}")
+check("blink epochs are 0 and 2",
+      set(oc.blink_epoch_indices) == {0, 2},
+      f"got {oc.blink_epoch_indices}")
+clean = clean_epoch_indices(rec3, oc.blink_epoch_indices, 0, 4)
+check("clean epochs exclude blink epochs", set(clean) == {1, 3},
+      f"got {clean}")
+check("summary is JSON-shaped", isinstance(summarize_ocular(oc), dict))
+
+# No frontopolar → unavailable, no crash
+rec3b = _make_rec(d3[2:], ["C3", "O1", "O2"], sf3)
+oc_b = detect_ocular_artifact(rec3b)
+check("no-frontopolar → available=False, no crash", not oc_b.available)
+
 print(f"\n{'='*60}\n  PASS: {n_pass}\n  FAIL: {n_fail}\n{'='*60}")
 if n_fail:
     sys.exit(1)
