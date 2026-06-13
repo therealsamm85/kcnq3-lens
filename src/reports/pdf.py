@@ -479,6 +479,63 @@ def build_doctor_pdf(
                 st["warning"],
             ))
 
+    # ─── v0.18: Advanced quantitative metrics ───────────────────────────
+    conn = findings.get("connectivity")
+    sharp = findings.get("sharp_spikes")
+    ocular = findings.get("ocular")
+    qual = findings.get("quality") or {}
+    morph_v = findings.get("morphology") or {}
+    if conn or sharp or ocular:
+        story.append(Paragraph("Advanced quantitative metrics (v0.18)", st["h2"]))
+
+        # Data-quality context: bad channels + blink rate (topography caveat).
+        bad_ch = qual.get("bad_channels") or []
+        if bad_ch:
+            story.append(Paragraph(
+                "Excluded/flagged channels (auto QC): " + ", ".join(bad_ch) +
+                " — averaged metrics (PDR, topography) avoid these.",
+                st["body"],
+            ))
+        if ocular and isinstance(ocular, dict) and ocular.get("available"):
+            br = ocular.get("blink_rate_per_min", 0)
+            pe = ocular.get("pct_blink_epochs", 0)
+            story.append(Paragraph(
+                f"Eye-blink rate: {br}/min ({pe}% of epochs). Frontal "
+                "topography is interpreted with blink-affected epochs excluded.",
+                st["body"],
+            ))
+
+        # Spike burden: the 10-30 Hz morphology rate vs the broadband
+        # sharpness-gated rate. A large gap means rhythmic contamination.
+        if sharp and isinstance(sharp, dict):
+            m_rate = morph_v.get("events_per_minute")
+            s_rate = sharp.get("sharp_rate_per_min")
+            pct_sharp = sharp.get("pct_candidates_sharp")
+            if m_rate is not None and s_rate is not None:
+                story.append(_kv_table([
+                    ("Spike rate — morphology (10–30 Hz)", f"{m_rate:.1f}/min"),
+                    ("Spike rate — broadband sharp-gated", f"{s_rate:.1f}/min"),
+                    ("Candidates passing sharpness gate", f"{pct_sharp:.0f}%"),
+                ]))
+                if m_rate > 0 and s_rate < 0.7 * m_rate:
+                    story.append(Paragraph(
+                        "The broadband sharp rate is well below the 10–30 Hz "
+                        "rate — part of the morphology count is rhythmic, not "
+                        "spike-like. The sharp rate is the more conservative "
+                        "estimate of true interictal spikes.",
+                        st["body"],
+                    ))
+
+        # Connectivity (wPLI) — descriptive, intra-patient only.
+        if conn and isinstance(conn, dict) and conn.get("mean_wpli_by_band"):
+            wb = conn["mean_wpli_by_band"]
+            story.append(Paragraph(
+                "Functional connectivity (debiased wPLI, descriptive — no "
+                "pediatric norms): " +
+                ", ".join(f"{k} {v:.3f}" for k, v in wb.items()),
+                st["body"],
+            ))
+
     # ─── v0.17.0: KCNQ3-specific section (if variant contains KCNQ3) ────
     if variant and "KCNQ3" in str(variant).upper():
         story.append(Paragraph(f"KCNQ3-spezifische Befunde — {variant}", st["h2"]))

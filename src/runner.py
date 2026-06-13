@@ -51,6 +51,9 @@ from .analyses.ied_ml import compute_ied_ml, summarize_ied_ml
 from .analyses.aperiodic import compute_aperiodic_exponent, summarize_aperiodic
 from .analyses.microstates import compute_microstates, summarize_microstates
 from .analyses.patterns import run_pattern_recognition, summarize_pattern_recognition
+from .analyses.connectivity import compute_connectivity, summarize_connectivity
+from .analyses.spike_sharp import detect_sharp_spikes, summarize_sharp_spikes
+from .preprocessing.ocular import detect_ocular_artifact, summarize_ocular
 from .clinical.impression import build_impression, build_recommendations
 from .clinical.impression_v2 import build_impression_v2, summarize_impression_v2
 from .clinical.negative_findings import build_negative_findings
@@ -326,6 +329,40 @@ def run_all_analyses(
     except Exception as e:
         findings["microstates"] = {"available": False, "error": str(e)}
         findings.setdefault("errors", {})["microstates"] = str(e)
+
+    # --- 11i. Ocular / eye-blink artifact (v0.18.8) ---
+    # Quantifies frontal blink contamination; downstream/UI can use the blink
+    # rate to caveat frontal topography. Run on the full recording.
+    try:
+        ocular = detect_ocular_artifact(rec)
+        findings["ocular"] = summarize_ocular(ocular)
+    except Exception as e:
+        findings["ocular"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["ocular"] = str(e)
+
+    # --- 11j. Functional connectivity / wPLI (v0.18.12) ---
+    # Descriptive band-wise wPLI; characterises thalamocortical coordination.
+    try:
+        conn = compute_connectivity(rec)
+        findings["connectivity"] = summarize_connectivity(conn)
+    except Exception as e:
+        findings["connectivity"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["connectivity"] = str(e)
+
+    # --- 11k. Broadband sharpness-gated spikes (v0.18.13) ---
+    # Additive second spike estimate on the same channel/window as morphology;
+    # the two rates together show how much of the morphology count is rhythmic.
+    try:
+        sharp = detect_sharp_spikes(
+            rec,
+            start_epoch=sleep_start_epoch,
+            end_epoch=sleep_end_epoch,
+            target_channel="Pz",
+        )
+        findings["sharp_spikes"] = summarize_sharp_spikes(sharp)
+    except Exception as e:
+        findings["sharp_spikes"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["sharp_spikes"] = str(e)
 
     # --- 11h. Pattern recognition (v0.17.0) ---
     try:

@@ -19,3 +19,6 @@ google-generativeai>=0.7
 
 # BIDS signal export (optional — metadata export works without it)
 edfio>=0.4
+
+# PDF text verification in tests (optional)
+pypdf>=4.0
