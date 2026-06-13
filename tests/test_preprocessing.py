@@ -147,6 +147,42 @@ rec3b = _make_rec(d3[2:], ["C3", "O1", "O2"], sf3)
 oc_b = detect_ocular_artifact(rec3b)
 check("no-frontopolar → available=False, no crash", not oc_b.available)
 
+# ─── Wave 4: autoreject-style epoch rejection ───────────────────────────────
+print("\n── Wave 4: per-channel epoch rejection ────────────────────────────")
+from src.preprocessing.artifact import compute_rejection, summarize_rejection
+
+sf4 = 100.0
+n4 = int(300 * sf4)  # 10 epochs of 30s
+names4 = ["Fp1", "Fp2", "C3", "C4", "Cz", "O1"]
+rng4 = np.random.RandomState(3)
+d4 = 30.0 * rng4.randn(6, n4).astype(np.float32)
+# Inject a big multi-channel movement artifact into epochs 3 and 7 (all chans).
+for ep_bad in (3, 7):
+    s = int(ep_bad * 30 * sf4)
+    e = s + int(30 * sf4)
+    d4[:, s:e] += 2000.0 * rng4.randn(6, e - s).astype(np.float32)
+rec4 = _make_rec(d4, names4, sf4)
+
+r4 = compute_rejection(rec4)
+check("rejection: 10 epochs scanned", r4.n_epochs == 10, f"{r4.n_epochs}")
+check("rejection: the 2 artifact epochs (3,7) are rejected",
+      set(r4.rejected_epoch_indices) == {3, 7},
+      f"rejected={r4.rejected_epoch_indices}")
+check("rejection: the 8 clean epochs are kept",
+      len(r4.clean_epoch_indices) == 8, f"{len(r4.clean_epoch_indices)}")
+check("rejection: per-channel thresholds present",
+      len(r4.per_channel_threshold_uv) == 6)
+check("rejection: summary JSON-shaped",
+      isinstance(summarize_rejection(r4), dict))
+
+# A single noisy channel must NOT reject otherwise-clean epochs.
+d4b = 30.0 * rng4.randn(6, n4).astype(np.float32)
+d4b[5] *= 50.0  # O1 is a loud channel throughout
+rec4b = _make_rec(d4b, names4, sf4)
+r4b = compute_rejection(rec4b)
+check("rejection: one loud channel doesn't reject all epochs",
+      r4b.pct_rejected_epochs < 20.0, f"{r4b.pct_rejected_epochs}%")
+
 print(f"\n{'='*60}\n  PASS: {n_pass}\n  FAIL: {n_fail}\n{'='*60}")
 if n_fail:
     sys.exit(1)
