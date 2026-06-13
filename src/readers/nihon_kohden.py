@@ -44,11 +44,22 @@ _NK_EEG_PHYS_MIN_UV = -3200.0
 _NK_EEG_PHYS_MAX_UV = 3199.902
 _NK_ADC_TO_UV = (_NK_EEG_PHYS_MAX_UV - _NK_EEG_PHYS_MIN_UV) / 65535.0  # ≈ 0.09766 µV/count
 _DEFAULT_SFREQ = 200
+# v0.18.16 (CRITICAL FIX): the multiplexed channel order for the NKT EEG2100
+# EEG-1200A is Fp2, Fp1, F4, F3, ... — verified against MNE's file-parsed order
+# on the short recordings (mne.io.read_raw_nihon) and confirmed on the 24h
+# long-form file (channels 0/1 are the referenced Fp2/Fp1 pair, corr ≈ −1.0).
+# The previous list started "Fp1, F4, F3, ..." (it omitted the leading Fp2),
+# shifting EVERY label by one slot — so on the 24h FA06301E recording, which is
+# read by this fallback, "Pz" carried Cz data, "O1" carried O2, etc., and the
+# reference channel $A2 (index 27) was mislabeled "Fp2" and treated as real EEG.
+# Electrode identity is load-bearing for every spatial analysis, so this
+# corrupted topography / connectivity / per-channel spike & PDR labelling on the
+# one recording the fallback exists to read. This list now matches the device's
+# true 29-channel order exactly.
 _DEFAULT_CH_NAMES_29 = [
-    "Fp1", "F4", "F3", "C4", "C3", "P4", "P3", "O2", "O1",
+    "Fp2", "Fp1", "F4", "F3", "C4", "C3", "P4", "P3", "O2", "O1",
     "F8", "F7", "T4", "T3", "T6", "T5", "Fz", "Cz", "Pz",
-    "E", "A2", "A1", "X1", "X2", "X3", "X4", "$A2", "$A1", "Fp2",
-    "MARK",
+    "E", "A2", "A1", "X1", "X2", "X3", "X4", "X5", "$A2", "$A1",
 ]
 _STANDARD_EEG_NAMES = {
     "Fp1", "Fp2", "F3", "F4", "Fz", "F7", "F8",
