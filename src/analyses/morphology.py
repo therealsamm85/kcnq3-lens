@@ -76,15 +76,16 @@ def compute_spike_morphology(
         Default 6.0 means threshold ≈ 4σ for Gaussian noise (MAD ≈ 0.6745σ,
         so 6 × MAD ≈ 4σ — NOT 6σ). To target N σ-units use ≈ N / 0.6745.
     """
-    ch_idx = rec.channel_index(target_channel)
-    if ch_idx is None:
-        for fallback in ("Pz", "Cz", "C3", "C4", "Fz"):
-            ch_idx = rec.channel_index(fallback)
-            if ch_idx is not None:
-                target_channel = fallback
-                break
+    # v0.18.5: liveness-aware channel resolution (skips present-but-dead
+    # channels, same guard as slow_waves). Candidate order preserves the prior
+    # default of preferring the requested channel, then Pz/Cz/C3/C4/Fz.
+    _cands = [target_channel] + [
+        c for c in ("Pz", "Cz", "C3", "C4", "Fz") if c.upper() != target_channel.upper()
+    ]
+    ch_idx, resolved_name, _ = rec.resolve_live_channel(_cands)
     if ch_idx is None:
         raise ValueError("No suitable channel for morphology analysis.")
+    target_channel = resolved_name
 
     sos_det = butter(4, list(detection_bandpass), btype="band", fs=rec.sfreq, output="sos")
     sos_bb = butter(4, list(morphology_bandpass), btype="band", fs=rec.sfreq, output="sos")

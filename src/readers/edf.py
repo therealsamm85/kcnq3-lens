@@ -104,8 +104,15 @@ def read_edf(path: Path) -> EEGRecording:
         cleaned = n.replace("EEG ", "").split("-")[0].strip()
         normalized.append(cleaned)
 
+    # v0.18.5: case-insensitive EEG-channel detection. Many systems (and
+    # CHB-MIT, and various European EEG exports) label channels in upper case
+    # ("FP1", "FZ", "CZ"). Matching case-sensitively against the title-case
+    # _STANDARD_EEG_NAMES silently dropped Fp1/Fz/Cz/Pz — exactly the midline
+    # channels the spindle/slow-wave detectors depend on — leaving the file
+    # with too few recognised EEG channels and no error.
     eeg_channel_indices = [
-        i for i, name in enumerate(normalized) if name in _STANDARD_EEG_NAMES
+        i for i, name in enumerate(normalized)
+        if name.upper() in _STANDARD_EEG_NAMES_UPPER
     ]
 
     data = raw.get_data()  # shape (n_ch, n_samples), in volts

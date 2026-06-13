@@ -172,14 +172,27 @@ def compute_background_power(
     sos_hp = butter(4, 0.5, btype="high", fs=sfreq, output="sos")
     sos_lp = butter(4, 40.0, btype="low", fs=sfreq, output="sos")
 
-    # Resolve posterior channel indices that actually exist in this recording
+    # Resolve posterior channel indices that actually exist in this recording.
+    # v0.18.5: exclude present-but-dead channels (flat/unplugged) from the
+    # posterior average — a 0 µV channel only dilutes the averaged trace the
+    # PDR is read from. (If every posterior channel looks flat, keep them all
+    # rather than fail — the recording may be genuinely low-amplitude.)
     pc_idx = []
     pc_names = []
+    dead_idx = []
+    dead_names = []
     for ch in posterior_channels:
         i = rec.channel_index(ch)
-        if i is not None:
+        if i is None:
+            continue
+        if rec.is_channel_live(i):
             pc_idx.append(i)
             pc_names.append(ch)
+        else:
+            dead_idx.append(i)
+            dead_names.append(ch)
+    if not pc_idx and dead_idx:
+        pc_idx, pc_names = dead_idx, dead_names  # all flat — fall back to all
     if not pc_idx:
         raise ValueError("No posterior channels found in recording.")
 

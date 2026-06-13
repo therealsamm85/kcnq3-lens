@@ -214,8 +214,12 @@ def read_nihon_kohden(
     if duration_s is None:
         duration_s = auto_duration_s
 
+    # v0.18.5: case-insensitive (consistent with the MNE path + edf.py). The
+    # hardcoded default layout is title-case, but a caller-supplied
+    # channel_names override may be upper case.
+    _std_upper = {n.upper() for n in _STANDARD_EEG_NAMES}
     eeg_channel_indices = [
-        i for i, name in enumerate(channel_names) if name in _STANDARD_EEG_NAMES
+        i for i, name in enumerate(channel_names) if name.upper() in _std_upper
     ]
 
     def _read_epoch(rec: EEGRecording, ep: int, eps_s: float = 30.0) -> np.ndarray | None:

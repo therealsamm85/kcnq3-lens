@@ -83,10 +83,12 @@ class EEGRecording:
         if channel_names is None:
             indices = self.eeg_channel_indices
         else:
+            # v0.18.5: case-insensitive, consistent with channel_index().
+            # Previously used case-sensitive `.index()`/`in`, so a request for
+            # "cz" against a file storing "Cz" silently returned fewer channels.
             indices = [
-                self.channel_names.index(n)
-                for n in channel_names
-                if n in self.channel_names
+                idx for n in channel_names
+                if (idx := self.channel_index(n)) is not None
             ]
         if self._full_data is not None:
             return self._full_data[indices]
@@ -120,3 +122,73 @@ class EEGRecording:
             if n.upper() == name.upper():
                 return i
         return None
+
+    def is_channel_live(self, ch_idx: int, flat_uv_threshold: float = 1.5,
+                        sample_epochs: int = 3) -> bool:
+        """Return False if a channel is essentially flat (dead / unplugged).
+
+        A present-but-dead channel (e.g. an electrode that was disconnected
+        but still occupies a slot in the file) silently corrupts any analysis
+        that lands on it — the slow-wave detector once reported 0 slow waves
+        on a 0.4 µV flat 'Fz'. Analyses use this to skip such channels.
+
+        Samples a few epochs spread across the recording and returns True iff
+        the median per-epoch std is at or above flat_uv_threshold µV. On any
+        read failure it returns True (never block detection on a probe error).
+        """
+        try:
+            n = self.n_epochs
+            if n <= 0:
+                return True
+            if n >= sample_epochs:
+                eps = [int((k + 1) * n / (sample_epochs + 1))
+                       for k in range(sample_epochs)]
+            else:
+                eps = list(range(n))
+            stds: list[float] = []
+            for ep in eps:
+                d = self.read_epoch(ep, 30.0)
+                if d is None:
+                    continue
+                if 0 <= ch_idx < d.shape[0]:
+                    stds.append(float(d[ch_idx].std()))
+            if not stds:
+                return True
+            return float(np.median(stds)) >= flat_uv_threshold
+        except Exception:
+            return True
+
+    def resolve_live_channel(
+        self, candidates: list[str],
+    ) -> tuple[int | None, str | None, bool]:
+        """Resolve the first present-and-live channel from a candidate list.
+
+        Returns (index, name, is_fallback). Tries each candidate in order and
+        returns the first that is present AND live. If a candidate is present
+        but dead, it is skipped. If none of the named candidates are live, it
+        scans all EEG channels for any live one (is_fallback=True). If still
+        none, returns the first present candidate (or first EEG channel) with
+        is_fallback=True so behaviour degrades loudly rather than silently.
+        Returns (None, None, False) only when the recording has no channels.
+        """
+        first_present_idx: int | None = None
+        first_present_name: str | None = None
+        for nm in candidates:
+            idx = self.channel_index(nm)
+            if idx is None:
+                continue
+            if first_present_idx is None:
+                first_present_idx = idx
+                first_present_name = self.channel_names[idx]
+            if self.is_channel_live(idx):
+                return idx, self.channel_names[idx], False
+        # No named candidate was live — scan all EEG channels.
+        for idx in self.eeg_channel_indices:
+            if self.is_channel_live(idx):
+                return idx, self.channel_names[idx], True
+        if first_present_idx is not None:
+            return first_present_idx, first_present_name, True
+        if self.eeg_channel_indices:
+            idx = self.eeg_channel_indices[0]
+            return idx, self.channel_names[idx], True
+        return None, None, False
