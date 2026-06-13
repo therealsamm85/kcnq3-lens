@@ -61,6 +61,14 @@ class BackgroundResult:
     posterior_lh_power: float | None = None    # avg alpha power O1+P3
     posterior_rh_power: float | None = None    # avg alpha power O2+P4
     asymmetry_interpretation: str = "not_computed"  # symmetric/lh_dominant/rh_dominant/marked_asymmetric
+    # v0.18.19: aperiodic(1/f)-corrected PDR. The raw posterior_dominant_rhythm_hz
+    # is the argmax of RAW power over 4-13 Hz, which a steep 1/f background biases
+    # toward the low (4 Hz) edge — so a "severely slow" PDR can be partly a
+    # peak-picking artifact. This is the frequency of the largest spectral bump
+    # ABOVE the fitted 1/f trend (None if no genuine peak rises above it).
+    pdr_aperiodic_corrected_hz: float | None = None
+    aperiodic_slope: float | None = None         # log-log 1/f slope (2-30 Hz)
+    pdr_method_divergence_hz: float | None = None  # |raw − corrected|; large = caution
 
 
 _PDR_AGE_NORMS = {
@@ -251,6 +259,29 @@ def compute_background_power(
     pdr_band = (f >= 4) & (f <= 13)
     pdr_hz = float(f[pdr_band][np.argmax(P[pdr_band])])
 
+    # v0.18.19: aperiodic(1/f)-corrected PDR. Fit the 1/f trend (log-log linear
+    # over 2-30 Hz), whiten the 4-13 Hz band by it, and take the largest bump
+    # above the trend — but only if it is a genuine peak (≥1.5× the whitened
+    # median), else report None (no rhythm rises above the 1/f background).
+    pdr_corrected: float | None = None
+    aperiodic_slope: float | None = None
+    pdr_divergence: float | None = None
+    try:
+        fit_mask = (f >= 2) & (f <= 30) & (P > 0)
+        if fit_mask.sum() >= 5:
+            coef = np.polyfit(np.log(f[fit_mask]), np.log(P[fit_mask]), 1)
+            aperiodic_slope = float(round(coef[0], 2))
+            fa = f[pdr_band]
+            trend = np.exp(np.polyval(coef, np.log(fa)))
+            whit = P[pdr_band] / trend
+            if whit.size and np.isfinite(whit).all():
+                med = float(np.median(whit))
+                if med > 0 and whit.max() >= 1.5 * med:
+                    pdr_corrected = float(fa[np.argmax(whit)])
+                    pdr_divergence = round(abs(pdr_hz - pdr_corrected), 1)
+    except Exception:
+        pass
+
     norm = _pdr_normative(age_years)
     if norm is None:
         interp = "no_age_provided"
@@ -303,6 +334,9 @@ def compute_background_power(
         posterior_lh_power=lh_power,
         posterior_rh_power=rh_power,
         asymmetry_interpretation=asym_interp,
+        pdr_aperiodic_corrected_hz=pdr_corrected,
+        aperiodic_slope=aperiodic_slope,
+        pdr_method_divergence_hz=pdr_divergence,
     )
 
 
@@ -332,4 +366,27 @@ def summarize_background(result: BackgroundResult) -> dict:
     out["asymmetry_interpretation"] = result.asymmetry_interpretation
     if result.pdr_z_score is not None:
         out["disclaimer_zscore"] = _DISCLAIMER_ZSCORE
+    # v0.18.19: aperiodic-corrected PDR + divergence caveat.
+    if result.aperiodic_slope is not None:
+        out["aperiodic_slope"] = result.aperiodic_slope
+    if result.pdr_aperiodic_corrected_hz is not None:
+        out["pdr_aperiodic_corrected_hz"] = round(
+            result.pdr_aperiodic_corrected_hz, 1)
+        out["pdr_method_divergence_hz"] = result.pdr_method_divergence_hz
+        if (result.pdr_method_divergence_hz or 0) >= 1.0:
+            out["pdr_caveat"] = (
+                "The raw PDR is the argmax of raw posterior power, which a steep "
+                f"1/f background biases low. A 1/f-corrected peak sits at "
+                f"{result.pdr_aperiodic_corrected_hz:.1f} Hz "
+                f"({result.pdr_method_divergence_hz:.1f} Hz higher) — so the "
+                "'slow' raw PDR may partly be a peak-picking artifact. A human "
+                "EEG reader should confirm the true posterior dominant rhythm."
+            )
+    else:
+        out["pdr_aperiodic_corrected_hz"] = None
+        out["pdr_caveat"] = (
+            "No posterior rhythm rises clearly above the 1/f background in the "
+            "4–13 Hz band — consistent with a genuinely attenuated/absent PDR "
+            "(not merely a slow one). Human confirmation recommended."
+        )
     return out
