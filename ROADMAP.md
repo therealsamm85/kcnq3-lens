@@ -61,6 +61,18 @@
 - ocular/connectivity/sharp-spikes wired into the runner + doctor PDF; the
   opt-in transforms remain user-invoked tools.
 
+### v0.18.21–v0.18.23 (family-facing longitudinal dashboards)
+
+- **Treatment-response dashboard:** before→after biomarker change anchored to
+  diary medication-change events, with clinical direction + non-removable
+  maturation/state/measurement caveats. Reads stored findings only.
+- **Vocabulary ↔ EEG correlation:** Spearman rank correlation of word counts
+  vs each biomarker, exact permutation p, strict small-n honesty gating,
+  maturation-confound flags. Hypothesis-generating, not a significance test.
+- Both surfaced in the Streamlit longitudinal view; shared `metric_polarity` +
+  `time_align` helpers. Hardened by a 10-agent adversarial audit (2 critical +
+  4 lower-severity defects fixed, each with a regression test).
+
 ---
 
 ## Tier 3 — NEXT (open, not started)

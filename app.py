@@ -1827,6 +1827,34 @@ elif mode == "longitudinal":
         st.dataframe(pd.DataFrame(diary_to_table(diary)),
                      use_container_width=True, hide_index=True)
 
+    # ── v0.18.21–22: treatment-response + vocabulary-correlation dashboards ──
+    # Both read only the stored findings + diary already loaded above.
+    st.markdown("---")
+    st.subheader("💊 Treatment-response dashboard")
+    st.caption("Did a medication change move the biomarkers? Before vs after "
+               "each diary medication-change event.")
+    if not entries:
+        st.info("Save at least one recording to populate this.")
+    else:
+        from src.longitudinal import (
+            compute_treatment_response, render_treatment_response_md,
+        )
+        tr = compute_treatment_response(entries, diary)
+        st.markdown(render_treatment_response_md(tr))
+
+    st.markdown("---")
+    st.subheader("🗣️ Vocabulary ↔ EEG correlation")
+    st.caption("Does vocabulary growth track the EEG biomarkers? "
+               "A hypothesis-generating picture — never proof at this few recordings.")
+    if not entries:
+        st.info("Save at least one recording to populate this.")
+    else:
+        from src.longitudinal import (
+            compute_word_correlation, render_word_correlation_md,
+        )
+        wc = compute_word_correlation(entries, diary)
+        st.markdown(render_word_correlation_md(wc))
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MODE E: Compare over time (longitudinal delta)

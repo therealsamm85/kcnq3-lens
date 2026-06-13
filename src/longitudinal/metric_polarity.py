@@ -39,8 +39,14 @@ METRIC_POLARITY: dict[str, int] = {
 
 # Metrics whose value also moves with normal maturation, so an improvement
 # across recordings months apart cannot be cleanly attributed to treatment.
+# delta_alpha_ratio sits on the SAME maturational axis as pdr_hz: delta power
+# dominates early childhood and the posterior alpha rhythm strengthens with
+# cortical maturation, so the ratio falls with normal development independent
+# of any treatment (see analyses/background.py, which introduces DAR as a
+# marker of the same slowing/immaturity as a low PDR).
 CONFOUNDED_BY_MATURATION: frozenset[str] = frozenset({
     "pdr_hz", "spindle_density_per_min", "first_cycle_n3_minutes",
+    "delta_alpha_ratio",
 })
 
 

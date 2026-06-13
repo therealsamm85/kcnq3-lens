@@ -6,6 +6,56 @@ This project is in early development. The 0.x line is for the rare-epilepsy comm
 
 ---
 
+## [0.18.21–0.18.23] — 2026-06-14
+
+Two family-facing longitudinal features the family asked for ("an EEG reader
+nobody has seen"), each built as a wave with synthetic + real-DB verification,
+then hardened by a 10-agent adversarial audit (4 review lenses → independent
+refute-by-default verification of every flagged defect).
+
+### Added
+
+- **Treatment-response dashboard** (`longitudinal/treatment_response.py`).
+  Anchors each stored EEG biomarker to the medication-change events in the
+  development diary and reports the before→after change per biomarker with a
+  clinical direction (improved / worsened / no-clear-change). Every comparison
+  is one recording before vs one after, so it carries explicit maturation /
+  sleep-state / measurement caveats and never claims causation. Reads stored
+  findings only — no EEG re-read.
+- **Vocabulary ↔ EEG correlation** (`longitudinal/word_correlation.py`).
+  Spearman rank correlation of diary word counts against each biomarker
+  (nearest-in-time pairing), with the expected clinical direction stated. Strict
+  honesty gating for a handful-of-recordings reality: no coefficient below 4
+  pairs, **exact permutation p** (never the anti-conservative asymptotic
+  approximation) shown only at ≥8 pairs, maturation-confounded biomarkers
+  flagged. Hypothesis-generating, explicitly not a significance test.
+- Shared single-source-of-truth helpers: `metric_polarity.py` (which direction
+  is clinically "better") and `time_align.py` (date parse, before/after split,
+  nearest-in-time match). Both surfaced in the Streamlit longitudinal view.
+
+### Fixed — from the adversarial audit (6 confirmed defects)
+
+- **CRITICAL** word-correlation reported false significance at n=8: scipy's
+  default p is the asymptotic t-approximation (anti-conservative at small n), so
+  rho=0.71 was flagged significant (p=0.047) when the exact permutation p is
+  0.058. Now uses an exact permutation p (full enumeration for n≤8).
+- **CRITICAL** a NaN biomarker rendered as a false "worsened" in the
+  treatment-response dashboard (and emitted invalid bare-`NaN` JSON). Non-finite
+  findings are now dropped at the series boundary → `not_evaluable`.
+- **HIGH** `delta_alpha_ratio` is maturation-confounded (same axis as PDR) but
+  was missing from the confound set, so its caveat was suppressed in both
+  features. Added.
+- **MEDIUM** an `inf` biomarker produced an ordinary-looking correlation; now
+  filtered. **LOW** `nearest_within` tie-break now honours "earlier date" on
+  unsorted input.
+
+Verification: `tests/test_treatment_response.py` 51/0 and
+`tests/test_word_correlation.py` 35/0 (synthetic ground-truth, the audit
+regressions, and real round-trips through the SQLite storage/diary API). Full
+suite green (1142 checks, 0 fail).
+
+---
+
 ## [0.18.4–0.18.15] — 2026-06-13
 
 A reader-correctness audit followed by a preprocessing/QC feature build

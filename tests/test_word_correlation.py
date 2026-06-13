@@ -134,6 +134,47 @@ check("no word data → note + no correlations",
       and any("No vocabulary" in n for n in none.notes))
 
 
+# ── audit regressions (Wave 12) ────────────────────────────────────────────
+print("\n── Wave 11: audit fixes — exact-p, non-finite, confound ───────────")
+
+# CRITICAL: false significance from scipy's asymptotic p. The exact reviewer
+# trigger (metric ranks 0..7, words 0,1,2,4,7,6,3,5) has rho=0.714 with
+# asymptotic p=0.0465 (<0.05) but EXACT permutation p=0.0576 (NOT significant).
+fs_dates = [f"2025-{m:02d}-01" for m in range(1, 9)]
+fs_metric = [float(i) for i in range(8)]
+fs_words = [0, 1, 2, 4, 7, 6, 3, 5]
+fs_entries = [_entry(d, pdr_hz=v) for d, v in zip(fs_dates, fs_metric)]
+fs_diary = [DiaryEntry(date=d, word_count=w) for d, w in zip(fs_dates, fs_words)]
+fs = _by_metric(compute_word_correlation(fs_entries, fs_diary, metrics=["pdr_hz"]))["pdr_hz"]
+check("exact-p reproduces rho≈0.714", fs.spearman_rho == 0.714, f"got {fs.spearman_rho}")
+check("exact permutation p ≈ 0.0576 (not the asymptotic 0.0465)",
+      fs.p_value is not None and abs(fs.p_value - 0.0576) < 0.002, f"got {fs.p_value}")
+check("borderline corr NOT flagged conclusive (was false-True with asymptotic p)",
+      fs.statistically_conclusive is False)
+check("interpretation states not significant",
+      "not statistically significant" in fs.interpretation)
+
+# non-finite metric value (inf) is filtered out, not silently correlated.
+inf_dates = ["2025-01-01", "2025-02-01", "2025-03-01", "2025-04-01", "2025-05-01"]
+inf_spikes = [5.0, 4.0, float("inf"), 2.0, 1.0]
+inf_words = [10, 20, 30, 40, 50]
+inf_entries = [_entry(d, spike_rate_per_min=s) for d, s in zip(inf_dates, inf_spikes)]
+inf_diary = [DiaryEntry(date=d, word_count=w) for d, w in zip(inf_dates, inf_words)]
+inf_mc = _by_metric(compute_word_correlation(inf_entries, inf_diary,
+                                             metrics=["spike_rate_per_min"]))["spike_rate_per_min"]
+check("inf biomarker dropped → only 4 finite pairs", inf_mc.n_pairs == 4, f"got {inf_mc.n_pairs}")
+check("no inf value survives into the pairs",
+      all(p.metric_value != float("inf") for p in inf_mc.pairs))
+
+# delta_alpha_ratio now flagged maturation-confounded (was missing).
+dar_entries = [_entry(d, delta_alpha_ratio=v) for d, v in zip(dates, [5.0, 4.0, 3.0, 2.0, 1.0])]
+dar = _by_metric(compute_word_correlation(dar_entries, diary,
+                                          metrics=["delta_alpha_ratio"]))["delta_alpha_ratio"]
+check("delta_alpha_ratio flagged maturation-confounded", dar.maturation_confounded is True)
+check("delta_alpha_ratio interpretation carries the maturation caveat",
+      "maturation" in dar.interpretation)
+
+
 # ── serialization + render ─────────────────────────────────────────────────
 print("\n── Wave 11: serialization + render ────────────────────────────────")
 

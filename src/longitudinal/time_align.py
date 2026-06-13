@@ -72,7 +72,9 @@ def nearest_within(
     """
     best: Optional[tuple[datetime.date, float, int]] = None
     best_abs = max_days + 1
-    for d, v in series:
+    # Iterate in date order so a strict-less update keeps the EARLIER date on a
+    # tie, honouring the documented tie-rule regardless of input ordering.
+    for d, v in sorted(series, key=lambda t: t[0]):
         gap = days_between(target, d)
         if abs(gap) <= max_days and abs(gap) < best_abs:
             best = (d, v, gap)

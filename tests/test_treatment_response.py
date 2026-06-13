@@ -185,6 +185,52 @@ check("no med changes → note, zero interventions",
       resp_none.n_interventions == 0 and any("No medication" in n for n in resp_none.notes))
 
 
+# ── audit regressions (Wave 12) ────────────────────────────────────────────
+print("\n── Wave 10: audit fixes — NaN guard, strict JSON, confound, ties ──")
+
+# CRITICAL: a NaN biomarker must NOT render as a false 'worsened'.
+nan_entries = [
+    _entry("2025-01-01", "pre", spike_rate_per_min=5.0),
+    _entry("2025-06-01", "post", spike_rate_per_min=float("nan")),
+]
+resp_nan = compute_treatment_response(nan_entries, diary, metrics=["spike_rate_per_min"])
+nan_mc = resp_nan.interventions[0].metric_changes[0]
+check("NaN biomarker → not_evaluable (not a false 'worsened')",
+      nan_mc.direction == "not_evaluable", f"got {nan_mc.direction}")
+check("NaN never reaches the delta field", nan_mc.delta is None)
+# Strict-JSON: no bare NaN/Infinity tokens in the summary.
+check("summary is STRICT-JSON valid (allow_nan=False) even with a NaN input",
+      isinstance(json.dumps(summarize_treatment_response(resp_nan), allow_nan=False), str))
+
+# inf is likewise not evaluable.
+inf_entries = [
+    _entry("2025-01-01", "pre", spike_rate_per_min=5.0),
+    _entry("2025-06-01", "post", spike_rate_per_min=float("inf")),
+]
+inf_mc = compute_treatment_response(inf_entries, diary,
+                                    metrics=["spike_rate_per_min"]).interventions[0].metric_changes[0]
+check("inf biomarker → not_evaluable", inf_mc.direction == "not_evaluable")
+
+# delta_alpha_ratio now flagged maturation-confounded in a MetricChange.
+dar_entries = [
+    _entry("2025-01-01", "pre", delta_alpha_ratio=5.0),
+    _entry("2025-06-01", "post", delta_alpha_ratio=2.0),
+]
+dar_mc = compute_treatment_response(dar_entries, diary,
+                                    metrics=["delta_alpha_ratio"]).interventions[0].metric_changes[0]
+check("delta_alpha_ratio flagged maturation-confounded", dar_mc.maturation_confounded is True)
+dar_md = render_treatment_response_md(
+    compute_treatment_response(dar_entries, diary, metrics=["delta_alpha_ratio"]))
+check("DAR row carries the maturation '*' marker + caveat",
+      "delta_alpha_ratio *" in dar_md and "rises with normal maturation" in dar_md)
+
+# nearest_within tie-break honours 'earlier date' on UNSORTED input.
+tie_series = [(datetime.date(2024, 1, 15), 2.0), (datetime.date(2024, 1, 5), 1.0)]
+tie = nearest_within(tie_series, datetime.date(2024, 1, 10), max_days=30)
+check("tie resolves to the earlier date regardless of input order",
+      tie == (datetime.date(2024, 1, 5), 1.0, -5), f"got {tie}")
+
+
 # ── serialization + markdown ───────────────────────────────────────────────
 print("\n── Wave 10: serialization + render ────────────────────────────────")
 

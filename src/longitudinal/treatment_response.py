@@ -25,6 +25,7 @@ is re-read here, so it is cheap and runs anywhere the longitudinal DB is loaded.
 from __future__ import annotations
 
 import datetime
+import math
 from dataclasses import dataclass, field, asdict
 
 from .storage import StoredEntry
@@ -108,8 +109,12 @@ def compute_treatment_response(
         pairs: list[tuple[datetime.date, float]] = []
         for ds, v in zip(dates, vals):
             d = parse_date(ds)
-            if d is not None:
-                pairs.append((d, float(v)))
+            fv = float(v)
+            # Drop non-finite findings (NaN/inf): get_metric_series only filters
+            # None, so a garbage value would otherwise reach direction_label and
+            # be rendered as a false "worsened" — a wrong clinical direction.
+            if d is not None and math.isfinite(fv):
+                pairs.append((d, fv))
         metric_series[m] = pairs
 
     # Collect medication-change interventions from the diary.
