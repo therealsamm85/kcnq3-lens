@@ -16,3 +16,6 @@ yasa>=0.7
 anthropic>=0.34
 openai>=1.40
 google-generativeai>=0.7
+
+# BIDS signal export (optional — metadata export works without it)
+edfio>=0.4

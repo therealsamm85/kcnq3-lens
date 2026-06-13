@@ -183,6 +183,62 @@ r4b = compute_rejection(rec4b)
 check("rejection: one loud channel doesn't reject all epochs",
       r4b.pct_rejected_epochs < 20.0, f"{r4b.pct_rejected_epochs}%")
 
+# ─── Wave 5: BIDS-EEG export (privacy-preserving) ───────────────────────────
+print("\n── Wave 5: BIDS-EEG export ────────────────────────────────────────")
+import json as _json, tempfile as _tf, shutil as _sh
+from pathlib import Path as _P
+from src.reports.bids import export_bids
+
+_rec5 = _make_rec(20.0 * np.random.RandomState(5).randn(4, int(60*100)),
+                  ["Fp1", "Cz", "Pz", "O1"], 100.0)
+_tmp = _P(_tf.mkdtemp(prefix="bidstest_"))
+try:
+    res = export_bids(
+        _rec5, _tmp, subject_label="reference 01!",  # sanitised → reference01
+        task="rest", session="visitA",
+        metadata={"age": 4.9, "sex": "F", "variant": "KCNQ3 p.Arg230His",
+                  "reference": "Cz"},
+        bad_channels=["Pz"], include_signal=False,
+    )
+    root = _P(res.dataset_root)
+    check("BIDS: subject label sanitised to alphanumerics",
+          res.subject == "sub-reference01", res.subject)
+    check("BIDS: dataset_description.json valid",
+          _json.loads((root / "dataset_description.json").read_text())
+          .get("BIDSVersion") == "1.9.0")
+    parts = (root / "participants.tsv").read_text()
+    check("BIDS: participants.tsv has the de-identified row",
+          "sub-reference01" in parts and "KCNQ3 p.Arg230His" in parts)
+    ch = list(root.rglob("*_channels.tsv"))[0].read_text()
+    check("BIDS: channels.tsv marks Pz bad",
+          "Pz\tEEG\tuV" in ch and "\tbad" in ch)
+    sc = _json.loads(list(root.rglob("*_eeg.json"))[0].read_text())
+    check("BIDS: sidecar carries sfreq + reference",
+          sc["SamplingFrequency"] == 100.0 and sc["EEGReference"] == "Cz")
+    # PRIVACY: no name / exact-date / source filename anywhere in the metadata.
+    blob = " ".join(p.read_text() for p in root.rglob("*")
+                    if p.is_file() and p.suffix in (".json", ".tsv", ""))
+    leaks = [s for s in ("the reference patient", "2026-", "REDACTED-DOB") if s in blob]
+    check("BIDS: no PHI in metadata", not leaks, f"leaked={leaks}")
+
+    # Signal export: works if edfio present, else a clear note (never silent).
+    res_sig = export_bids(_rec5, _tmp, subject_label="t2", include_signal=True)
+    try:
+        import edfio  # noqa: F401
+        _have_edfio = True
+    except ImportError:
+        _have_edfio = False
+    if _have_edfio:
+        check("BIDS: signal exported to EDF when edfio present",
+              res_sig.signal_exported)
+        edf = list(root.rglob("sub-t2*_eeg.edf"))
+        check("BIDS: EDF file written", len(edf) == 1)
+    else:
+        check("BIDS: signal-export note explains missing edfio",
+              "edfio" in res_sig.signal_export_note)
+finally:
+    _sh.rmtree(_tmp, ignore_errors=True)
+
 print(f"\n{'='*60}\n  PASS: {n_pass}\n  FAIL: {n_fail}\n{'='*60}")
 if n_fail:
     sys.exit(1)
