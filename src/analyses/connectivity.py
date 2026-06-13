@@ -109,14 +109,20 @@ def compute_connectivity(
             if bins.size == 0:
                 continue
             Xb = X[:, bins]                       # (n_ch, n_bins)
-            # Cross-spectrum per pair, averaged over the band's bins:
-            # S_ij(f) = X_i(f) * conj(X_j(f)); take Im, average over bins.
-            # Build (n_ch, n_ch, n_bins) lazily via einsum on imag parts.
-            cross = np.einsum("if,jf->ijf", Xb, np.conj(Xb))
-            im = np.imag(cross).mean(axis=2)       # (n_ch, n_ch)
-            sum_im[b] += im
-            sum_abs_im[b] += np.abs(im)
-            sum_im_sq[b] += im ** 2
+            # Cross-spectrum per pair per bin: S_ij(f) = X_i(f)·conj(X_j(f)).
+            # v0.18.18: accumulate each (epoch, frequency-bin) as a SEPARATE
+            # observation of Im(S), instead of band-averaging Im per epoch
+            # before accumulating. The earlier mean-over-bins collapsed the
+            # debiased-wPLI observation count to n_epochs, leaving a large
+            # positive noise floor on truly-uncorrelated signals (~0.07 at 5-20
+            # epochs). Summing over bins as well pools n_epochs × n_bins
+            # observations, so the debiasing (|ΣIm|²−ΣIm²)/(Σ|Im|²−ΣIm²)
+            # converges to ~0 for uncorrelated input while still detecting
+            # genuine phase-lagged coupling.
+            imf = np.imag(np.einsum("if,jf->ijf", Xb, np.conj(Xb)))  # (n_ch,n_ch,n_bins)
+            sum_im[b] += imf.sum(axis=2)
+            sum_abs_im[b] += np.abs(imf).sum(axis=2)
+            sum_im_sq[b] += (imf ** 2).sum(axis=2)
 
     mean_wpli: dict[str, float] = {}
     matrices: dict[str, list[list[float]]] = {}
