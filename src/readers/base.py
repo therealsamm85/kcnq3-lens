@@ -20,11 +20,11 @@ class EEGRecording:
 
     path: Path
     sfreq: float                  # samples per second
-    n_channels: int
+    n_channels: int               # ⚠ EEG-only count (len(eeg_channel_indices)), NOT len(channel_names)
     duration_s: float
-    channel_names: list[str]      # length == n_channels
-    n_channels_in_file: int       # may include marker/reference channels
-    eeg_channel_indices: list[int]  # subset of channel_names that are real EEG
+    channel_names: list[str]      # length == n_channels_in_file (ALL channels, incl. aux)
+    n_channels_in_file: int       # == len(channel_names); may include marker/ref channels
+    eeg_channel_indices: list[int]  # indices into channel_names that are real EEG
     format_name: str              # e.g. "Nihon Kohden EEG-1200A", "EDF"
 
     # Optional fields set by reader implementations:

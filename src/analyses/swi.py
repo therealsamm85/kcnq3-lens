@@ -229,4 +229,18 @@ def summarize_swi(result: SWIResult) -> dict:
         },
         "n_epochs_with_continuous_sw": result.n_epochs_with_continuous_sw,
         "notes": result.notes,
+        # v0.18.20: honesty caveat. The SWI counts band-limited amplitude peaks
+        # (like morphology.py); it does NOT verify that what it counts is
+        # epileptiform. A purely rhythmic run (e.g. age-normal mu/alpha) can
+        # register as "continuous spike-wave" — a 6 Hz rhythmic test signal
+        # produced ~12% coverage. csws_criterion_met is therefore a screening
+        # flag, NOT a diagnosis: a high SWI must be confirmed by a human reader
+        # (and cross-checked against the broadband sharp-spike rate) before any
+        # CSWS/ESES conclusion.
+        "caveat": (
+            "SWI counts band-limited amplitude peaks and does not confirm they "
+            "are epileptiform; rhythmic non-epileptiform activity can inflate it. "
+            "Treat csws_criterion_met as a screening flag requiring human "
+            "confirmation, not a diagnosis."
+        ),
     }
