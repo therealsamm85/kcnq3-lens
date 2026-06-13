@@ -6,6 +6,71 @@ This project is in early development. The 0.x line is for the rare-epilepsy comm
 
 ---
 
+## [0.18.4–0.18.15] — 2026-06-13
+
+A reader-correctness audit followed by a preprocessing/QC feature build
+(Tier 1–3 from a review of mature open-source EEG tools). Every wave was
+verified on real recordings + synthetic ground truth before commit.
+
+### Fixed — silent reader bugs (0.18.4–0.18.5)
+
+- **µV calibration in the long-form NK reader.** The reverse-engineered
+  fallback path returned raw int16 ADC counts, ~10× mis-scaled vs the MNE
+  path. Applied the NK EEG-1200A fixed gain (0.09766 µV/count). The 24h
+  recording now reads at physiological amplitude.
+- **Dead/flat channel mapping.** Analyses fell back only on *absent*
+  channels, not present-but-dead ones, so a detector could run silently on a
+  0.4 µV unplugged electrode (it once reported 0 slow waves). Added
+  `EEGRecording.is_channel_live()` / `resolve_live_channel()` and wired them
+  into slow-waves, spindles, morphology, and the PDR posterior average.
+- **Case-sensitive EEG-channel detection.** Upper-case montages ("FP1",
+  "FZ", "CZ") silently lost the midline channels the sleep detectors need.
+  Now case-insensitive across all reader paths.
+
+### Added — preprocessing & QC layer (Tier 1, 0.18.6–0.18.8)
+
+- **PREP-style channel QC** (`quality.py`): µV-correct thresholds (the old
+  ADC-scale thresholds were dead on µV data) plus relative "noisy" and
+  correlation-based "uncorrelated" flags that catch a junk reference channel.
+- **Lazy common-average re-referencing + interpolation**
+  (`src/preprocessing/reference.py`): per-epoch CAR over good channels +
+  neighbour interpolation of bad channels; opt-in; works on 24h recordings.
+- **Ocular/blink detection + epoch masking** (`src/preprocessing/ocular.py`):
+  found that the early "frontal topographic drift" was largely eye-blink.
+
+### Added — Tier 2 / Tier 3
+
+- **Per-channel epoch rejection** (`src/preprocessing/artifact.py`):
+  Autoreject-inspired data-driven thresholds (0.18.10).
+- **Minimal privacy-preserving BIDS-EEG export** (`src/reports/bids.py`):
+  de-identified by construction; optional EDF signal export (0.18.11).
+- **Debiased wPLI connectivity** (`src/analyses/connectivity.py`): robust to
+  volume conduction; quantifies the thalamocortical decoupling (0.18.12).
+- **Broadband sharpness-gated spike detector** (`src/analyses/spike_sharp.py`):
+  additive second estimate; on real data ~28% of the 10–30 Hz morphology
+  "spikes" do not pass the sharpness gate (rhythmic contamination) (0.18.13).
+- **Event annotation export for human review** (`src/reports/annotations.py`):
+  BIDS events.tsv round-trip so a clinician can confirm/reject candidates
+  (0.18.14).
+- **Longitudinal spike-burden biomarker tracker**
+  (`src/longitudinal/biomarker.py`): same channel + threshold across
+  timepoints — an objective treatment-response measure (0.18.9).
+
+### Wiring (0.18.15)
+
+- ocular / connectivity / sharp-spikes integrated into the runner and the
+  doctor PDF ("Advanced quantitative metrics" section). The opt-in transforms
+  (re-reference, epoch rejection, BIDS, biomarker, annotations) are tools the
+  user invokes, not auto-run.
+
+### Tests
+
+- 5 new suites (preprocessing, biomarker, connectivity, spike_sharp,
+  annotations) — 65 checks; full project 1051 checks, 0 fail.
+- `edfio` and `pypdf` added as explicitly optional dependencies.
+
+---
+
 ## [0.13.3] — 2026-05-15
 
 ### Added — automated IED detection (Tier 2)

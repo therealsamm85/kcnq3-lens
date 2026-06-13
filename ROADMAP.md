@@ -37,6 +37,30 @@
 - v0.13.2: SO-spindle coupling (PLV-based coupling angle and strength) + registry schema v2 (HFO rate, coupling buckets, IED method fields)
 - v0.13.3: Automated IED detection — ensemble heuristic (morphology + template + amplitude); opt-in SpikeNet wrapper (stub — requires local model weights)
 
+### v0.14–v0.17 (longitudinal, aperiodic, microstates, pattern recognition)
+
+- Multi-timepoint compare with confound detection; aperiodic 1/f exponent;
+  quantitative PDR z-score; EEG microstates; KCNQ3-specific pattern recognition
+  + Sands-2019 comparison in the doctor PDF.
+
+### v0.18.2–v0.18.15 (anti-hallucination audit + preprocessing/QC layer)
+
+- **Citation audit (v0.18.2):** corrected 9 wrong PMIDs, removed 6 fabricated
+  references; remaining citations externally verified.
+- **Reader-correctness fixes (v0.18.4–0.18.5):** µV calibration in the
+  long-form NK reader, live-channel guards (dead-electrode safety),
+  case-insensitive channel detection.
+- **Preprocessing & QC (Tier 1):** PREP-style channel QC (noisy/uncorrelated),
+  lazy common-average re-referencing + bad-channel interpolation, ocular/blink
+  detection + epoch masking.
+- **Tier 2/3 features:** Autoreject-style per-channel epoch rejection;
+  privacy-preserving BIDS-EEG export; debiased wPLI connectivity; broadband
+  sharpness-gated spike detector (additive — shows rhythmic contamination in
+  the 10–30 Hz count); event annotation export for human review; longitudinal
+  spike-burden biomarker tracker.
+- ocular/connectivity/sharp-spikes wired into the runner + doctor PDF; the
+  opt-in transforms remain user-invoked tools.
+
 ---
 
 ## Tier 3 — NEXT (open, not started)
@@ -47,17 +71,24 @@ These are the most impactful next contributions. Open an issue before starting a
 
 Work with a pediatric neurologist to compare tool outputs against expert-scored polysomnograms and clinical EEG reads on ≥10 recordings. Without this, all interpretation labels remain "tool convention" only. This is the highest-leverage thing anyone can do to improve the tool's real-world utility.
 
-### BIDS-EEG export
+### ~~BIDS-EEG export~~ — shipped in v0.18.11
 
-Export findings and (optionally) the anonymized recording as a [BIDS-EEG](https://bids-specification.readthedocs.io/en/stable/modality-specific-files/electroencephalography.html) dataset. Would allow families to share data in a format research labs can directly ingest, without custom parsing.
+Minimal privacy-preserving BIDS-EEG export now lives in `src/reports/bids.py`
+(de-identified metadata always; optional EDF signal via the optional `edfio`
+package). Remaining nice-to-have: a `sidecar`-level events.tsv auto-attached to
+the export (the annotation exporter in v0.18.14 already produces the file).
 
 ### Pediatric YASA tuning
 
 YASA's SleepStaging model is trained on adult polysomnography. A pediatric-specific model (or a correction layer) would substantially improve sleep-stage accuracy for the 2–12-year-old range that most KCNQ3 families fall into. Likely requires a labeled pediatric polysomnography dataset (CHB-MIT is not staged; DREAMS or SEDF may be useful starting points).
 
-### UI integration of Tier-2 findings
+### UI integration of Tier-2/3 findings — partially shipped
 
-Slow waves, HFO ripples, coupling, and IED are computed but only exposed as JSON output and in the doctor PDF. A dedicated UI tab (or extension of the existing Clinical tab) showing these findings interactively — with interpretation caveats in-line — would make them accessible to families.
+The "Advanced analyses" UI tab (v0.18.0) and the "Advanced quantitative
+metrics" doctor-PDF section (v0.18.15) now surface slow waves, HFO, coupling,
+IED, connectivity, blink rate, and the morphology-vs-sharp spike comparison.
+Remaining: interactive exposure of the opt-in transforms (re-reference preview,
+epoch-rejection overlay, longitudinal biomarker plot) in the UI.
 
 ### Additional clinical patterns
 
