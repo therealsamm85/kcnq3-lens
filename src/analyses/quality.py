@@ -86,35 +86,41 @@ def assess_quality(
     sos_muscle = butter(4, [30.0, min(99.0, rec.sfreq / 2 - 1)],
                         btype="band", fs=rec.sfreq, output="sos")
 
-    n_eps = end_epoch - start_epoch
+    n_declared = end_epoch - start_epoch
     n_chs = len(eeg_idx)
 
-    # Per-channel: collect amplitude stats across all epochs
-    ch_stds: np.ndarray = np.zeros((n_chs, n_eps))
-    ch_ptp_p99: np.ndarray = np.zeros((n_chs, n_eps))
-    ch_abs_max: np.ndarray = np.zeros((n_chs, n_eps))
-    broad_pow_per_epoch: np.ndarray = np.zeros(n_eps)
-    muscle_pow_per_epoch: np.ndarray = np.zeros(n_eps)
+    # v0.18.17: collect per-epoch stats from the epochs ACTUALLY yielded, not a
+    # pre-allocated array sized to the declared epoch count. iter_epochs skips
+    # unreadable/partial epochs (read_epoch → None), so pre-allocating to
+    # n_declared and filling by enumerate-index left spurious zero rows for any
+    # skipped epoch — corrupting the per-channel medians and the artifact
+    # thresholds, and (at a high skip fraction) flipping good channels to a
+    # false "flat" flag and the grade to D.
+    _stds: list[np.ndarray] = []
+    _ptp: list[np.ndarray] = []
+    _absmax: list[np.ndarray] = []
+    _broad_pow: list[float] = []
+    _muscle_pow: list[float] = []
 
     # v0.18.6: accumulate an inter-channel correlation matrix on a sampled
     # subset of epochs (full 24 h would be wasteful). Each sampled epoch
     # contributes its channel×channel correlation; we average across samples.
     corr_accum = np.zeros((n_chs, n_chs))
     corr_count = 0
-    _sample_stride = max(1, n_eps // max(1, corr_sample_epochs))
+    _sample_stride = max(1, n_declared // max(1, corr_sample_epochs))
 
     for i, (ep, d) in enumerate(rec.iter_epochs(
         epoch_seconds=epoch_seconds, start=start_epoch, end=end_epoch
     )):
         chans = d[eeg_idx]
-        ch_stds[:, i] = chans.std(axis=1)
-        ch_ptp_p99[:, i] = np.ptp(chans, axis=1)
-        ch_abs_max[:, i] = np.max(np.abs(chans), axis=1)
+        _stds.append(chans.std(axis=1))
+        _ptp.append(np.ptp(chans, axis=1))
+        _absmax.append(np.max(np.abs(chans), axis=1))
         mean = chans.mean(axis=0)
         broad = sosfiltfilt(sos_broad, mean)
         muscle = sosfiltfilt(sos_muscle, mean)
-        broad_pow_per_epoch[i] = float(np.mean(broad ** 2))
-        muscle_pow_per_epoch[i] = float(np.mean(muscle ** 2))
+        _broad_pow.append(float(np.mean(broad ** 2)))
+        _muscle_pow.append(float(np.mean(muscle ** 2)))
 
         if n_chs >= 3 and (i % _sample_stride == 0):
             # Correlate on band-passed data (1-40 Hz): raw channels carry
@@ -126,6 +132,23 @@ def assess_quality(
             if np.all(np.isfinite(cmat)):
                 corr_accum += np.abs(cmat)
                 corr_count += 1
+
+    # v0.18.17: build the stat arrays from the epochs actually read. n_eps is
+    # now the true readable-epoch count (used for the artifact %, grade, and
+    # n_total_epochs), not the declared count that included skipped epochs.
+    n_eps = len(_stds)
+    if n_eps == 0:
+        return QualityResult(
+            channel_qualities=[], n_good_channels=0, n_total_channels=n_chs,
+            n_artifact_epochs=0, n_total_epochs=0, pct_usable=0.0,
+            overall_grade="D",
+            warnings=["No readable epochs in the requested range."],
+        )
+    ch_stds = np.array(_stds).T            # (n_chs, n_eps)
+    ch_ptp_p99 = np.array(_ptp).T
+    ch_abs_max = np.array(_absmax).T
+    broad_pow_per_epoch = np.array(_broad_pow)
+    muscle_pow_per_epoch = np.array(_muscle_pow)
 
     # Correlation of each channel vs all others (exclude self-diagonal).
     # We flag on the MAX correlation with any other channel (PREP-style): a

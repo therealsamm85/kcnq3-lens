@@ -148,12 +148,19 @@ def compute_spike_morphology(
 
     peaks = np.array(all_peaks, dtype=int)
 
-    # ── Morphology measurement on broadband (unchanged) ─────────────────────
+    # ── Morphology measurement on broadband ─────────────────────────────────
+    # v0.18.17: the half-amplitude search window must be a fixed TIME span, not
+    # a fixed sample count. A ±100-sample window is ±200 ms at 500 Hz but only
+    # ±100 ms at 1000 Hz, making the simple/sharp/complex duration
+    # classification sample-rate-dependent (a true 550 ms complex measured 398
+    # ms at 500 Hz and 199 ms — misclassified "sharp" — at 1000 Hz). Use ±300 ms
+    # so the window comfortably contains the longest events the classifier bins.
+    half_win = int(0.3 * rec.sfreq)
     sample_every = max(1, len(peaks) // 3000) if len(peaks) > 0 else 1
     durations_ms: list[float] = []
     for p in peaks[::sample_every]:
-        win_l = max(0, p - 100)
-        win_r = min(len(bb), p + 100)
+        win_l = max(0, p - half_win)
+        win_r = min(len(bb), p + half_win)
         seg = bb[win_l:win_r]
         rel_p = p - win_l
         if rel_p < 0 or rel_p >= len(seg):

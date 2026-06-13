@@ -67,6 +67,12 @@ _STANDARD_EEG_NAMES = {
     "P3", "P4", "Pz",
     "T3", "T4", "T5", "T6",
     "O1", "O2",
+    # v0.18.17: modern 10-10 temporal/parietal aliases (T3=T7, T4=T8, T5=P7,
+    # T6=P8). edf.py already accepts these; without them the SAME montage in
+    # modern labels was read as 15 EEG channels via the NK reader vs 19 via
+    # EDF, dropping exactly the centro-temporal coverage that drives the
+    # Rolandic/BCECTS spike analysis.
+    "T7", "T8", "P7", "P8",
 }
 
 
