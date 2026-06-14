@@ -61,6 +61,18 @@
 - ocular/connectivity/sharp-spikes wired into the runner + doctor PDF; the
   opt-in transforms remain user-invoked tools.
 
+### v0.19.0 (12 features from the open-source EEG-tool survey)
+
+- From a verified GitHub survey of mature EEG tools: annotated EDF+ export,
+  entropy/complexity metrics, graph-theory network metrics, raw-trace viewer,
+  spike-triggered averaging + topography, two-stage HFO classification, ictal
+  screener (flag-for-review), ICA+ICLabel, ASR, age-normative qEEG z-scores
+  (placeholder norms, flagged), SCORE/IFCN report, Micromed .TRC reader.
+- Build-vs-borrow per feature (build on numpy/scipy/mne by default; borrow an
+  optional dep only with a graceful fallback). Wired into the runner + PDF + app
+  (transforms stay opt-in). Hardened by a 42-agent adversarial review (30
+  defects fixed, dominant class = non-finite leakage into clinical values).
+
 ### v0.18.21–v0.18.23 (family-facing longitudinal dashboards)
 
 - **Treatment-response dashboard:** before→after biomarker change anchored to

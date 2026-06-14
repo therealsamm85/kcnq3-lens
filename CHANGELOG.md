@@ -6,6 +6,60 @@ This project is in early development. The 0.x line is for the rare-epilepsy comm
 
 ---
 
+## [0.19.0] — 2026-06-14
+
+Twelve new capabilities from a verified survey of mature open-source EEG tools
+(what they offer that this tool lacked), each built with an explicit
+build-vs-borrow decision, then hardened by a 42-agent adversarial code review.
+
+### Added — 12 features (build-vs-borrow noted)
+
+- **Annotated EDF+ export** (borrow edfio) — hand the neurologist an EDF+ with
+  the tool's spike/SWI/HFO marks, openable in free EDFbrowser.
+- **Entropy / complexity** (build) — sample/permutation/spectral entropy, Hjorth,
+  Higuchi FD, Lempel-Ziv: background-disorganization markers.
+- **Graph-theory network metrics** (build) — clustering, efficiency, small-world
+  σ on the existing wPLI matrices.
+- **Raw-trace viewer** (borrow mne/matplotlib) — stacked-trace windows + desktop
+  Qt browser, so a human can eyeball the waveform behind a number.
+- **Spike-triggered averaging → peak topography** (build) — focal/regional/
+  bilateral field readout from the detected IEDs.
+- **Two-stage HFO classification** (build) — artifact rejection + spike-coupled
+  (spkHFO) flag on the existing HFO events.
+- **Ictal screener** (build, flag-for-review) — sensitivity-first rhythmic-
+  evolution detector for electrographic seizures; confidence capped at moderate.
+- **ICA + ICLabel** (borrow mne-icalabel + fallback) — component-based ocular/
+  muscle/cardiac removal.
+- **ASR** (borrow asrpy + fallback) — transient burst correction.
+- **Age-normative qEEG z-scores** (build engine; norms pluggable) — ships
+  UNVERIFIED placeholder norms behind a do-not-use-clinically banner.
+- **SCORE/IFCN-structured report** (build) — re-words findings into the familiar
+  clinical section layout.
+- **Micromed .TRC reader** (borrow python-neo) + Natus note.
+
+### Fixed — 42-agent adversarial code review (30 confirmed defects)
+
+A batched per-module review (one reviewer + independent refute-by-default
+verification each) found 30 defects, all reproduced against the real code and
+fixed with regression tests. Dominant class: **non-finite (NaN/inf) inputs
+leaking into clinical values** (5 critical) — now guarded at every module
+boundary. Also: EDF integer-rate write, spike focal-vs-bilateral ordering,
+Micromed channel-name normalization, ICA data-truncation + honest W-ICA note,
+duplicate-channel-name aliasing, and several honesty/doc corrections.
+
+### Wired
+
+- All 6 per-recording analyses + the SCORE report run inside `run_all_analyses`
+  (error-resilient); the 4 transforms stay opt-in tools.
+- Doctor PDF gains a "Novel quantitative metrics (v0.19)" section; the app's
+  advanced tab surfaces them + the SCORE report, and single-recording mode adds
+  on-demand ICA/ASR/EDF+ tools.
+
+Verified: full suite 1325+ checks, 0 fail (12 new suites + regressions + a
+runner-wiring smoke test).
+
+---
+
 ## [0.18.21–0.18.23] — 2026-06-14
 
 Two family-facing longitudinal features the family asked for ("an EEG reader
