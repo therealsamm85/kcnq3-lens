@@ -53,6 +53,13 @@ from .analyses.microstates import compute_microstates, summarize_microstates
 from .analyses.patterns import run_pattern_recognition, summarize_pattern_recognition
 from .analyses.connectivity import compute_connectivity, summarize_connectivity
 from .analyses.spike_sharp import detect_sharp_spikes, summarize_sharp_spikes
+from .analyses.entropy import compute_entropy, summarize_entropy
+from .analyses.graph_metrics import compute_graph_metrics, summarize_graph_metrics
+from .analyses.spike_average import compute_spike_average, summarize_spike_average
+from .analyses.hfo_classify import classify_hfos, summarize_hfo_classify
+from .analyses.ictal import screen_ictal, summarize_ictal
+from .analyses.normative import compute_normative_z, summarize_normative
+from .reports.score_report import build_score_report
 from .preprocessing.ocular import detect_ocular_artifact, summarize_ocular
 from .clinical.impression import build_impression, build_recommendations
 from .clinical.impression_v2 import build_impression_v2, summarize_impression_v2
@@ -342,12 +349,22 @@ def run_all_analyses(
 
     # --- 11j. Functional connectivity / wPLI (v0.18.12) ---
     # Descriptive band-wise wPLI; characterises thalamocortical coordination.
+    conn = None
     try:
         conn = compute_connectivity(rec)
         findings["connectivity"] = summarize_connectivity(conn)
     except Exception as e:
         findings["connectivity"] = {"available": False, "error": str(e)}
         findings.setdefault("errors", {})["connectivity"] = str(e)
+
+    # --- 11j2. Graph-theory network metrics (v0.19.0) — from the wPLI matrices ---
+    if conn is not None:
+        try:
+            gm = compute_graph_metrics(conn.matrices_by_band, conn.channels)
+            findings["graph_metrics"] = summarize_graph_metrics(gm)
+        except Exception as e:
+            findings["graph_metrics"] = {"available": False, "error": str(e)}
+            findings.setdefault("errors", {})["graph_metrics"] = str(e)
 
     # --- 11k. Broadband sharpness-gated spikes (v0.18.13) ---
     # Additive second spike estimate on the same channel/window as morphology;
@@ -363,6 +380,53 @@ def run_all_analyses(
     except Exception as e:
         findings["sharp_spikes"] = {"available": False, "error": str(e)}
         findings.setdefault("errors", {})["sharp_spikes"] = str(e)
+
+    # --- 11l. Entropy / complexity (v0.19.0) ---
+    # Background-disorganization markers; feed the longitudinal trackers.
+    try:
+        ent = compute_entropy(rec, target_channel="Pz")
+        findings["entropy"] = summarize_entropy(ent)
+    except Exception as e:
+        findings["entropy"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["entropy"] = str(e)
+
+    # --- 11m. Spike-triggered averaging → peak topography (v0.19.0) ---
+    # Reuses the morphology spike event times; focal-vs-bilateral field readout.
+    try:
+        spk_avg = compute_spike_average(rec, findings.get("_morphology_events"))
+        findings["spike_average"] = summarize_spike_average(spk_avg)
+    except Exception as e:
+        findings["spike_average"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["spike_average"] = str(e)
+
+    # --- 11n. Two-stage HFO classification (v0.19.0) — artifact / spkHFO ---
+    try:
+        hfo_cls = classify_hfos(
+            findings.get("_hfo_ripples_events"),
+            spike_events=findings.get("_morphology_events"),
+        )
+        findings["hfo_classify"] = summarize_hfo_classify(hfo_cls)
+    except Exception as e:
+        findings["hfo_classify"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["hfo_classify"] = str(e)
+
+    # --- 11o. Ictal screener (v0.19.0) — sensitivity-first, flag-for-review ---
+    try:
+        ictal = screen_ictal(rec)
+        findings["ictal"] = summarize_ictal(ictal)
+    except Exception as e:
+        findings["ictal"] = {"available": False, "error": str(e)}
+        findings.setdefault("errors", {})["ictal"] = str(e)
+
+    # --- 11p. Age-normative qEEG z-scores (v0.19.0) — needs age ---
+    # Ships UNVERIFIED placeholder norms (loud banner); skipped without an age.
+    if age_years is not None:
+        try:
+            norm = compute_normative_z(findings, age_years)
+            findings["normative"] = summarize_normative(norm)
+        except Exception as e:
+            findings["normative"] = {"available": False, "error": str(e)}
+            findings.setdefault("errors", {})["normative"] = str(e)
 
     # --- 11h. Pattern recognition (v0.17.0) ---
     try:
@@ -402,6 +466,18 @@ def run_all_analyses(
         findings["negative_findings"] = build_negative_findings(findings)
     except Exception as e:
         errors["negative_findings"] = str(e)
+
+    # --- 14. SCORE/IFCN-structured report (v0.19.0) — built from all findings ---
+    try:
+        score = build_score_report(findings)
+        findings["score_report"] = {
+            "sections": score.sections,
+            "impression": score.impression,
+            "notes": score.notes,
+        }
+    except Exception as e:
+        findings["score_report"] = {"available": False, "error": str(e)}
+        errors["score_report"] = str(e)
 
     _emit("clinical", 1.0)
 
