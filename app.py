@@ -839,6 +839,89 @@ def _render_findings_tabs(findings: dict, key_prefix: str = ""):
         else:
             st.info(T("ied_unavailable"))
 
+        st.divider()
+
+        # ── v0.19: novel quantitative metrics ─────────────────────────────
+        st.markdown("### 🧬 Novel quantitative metrics (v0.19)")
+
+        ent = findings.get("entropy", {})
+        em = ent.get("metrics") or {}
+        if em:
+            st.markdown("**Background complexity / entropy** "
+                        "(intra-patient comparison; not age-normed)")
+            ec = st.columns(4)
+            ec[0].metric("Sample entropy",
+                         f"{em['sample_entropy']:.3f}" if em.get("sample_entropy") is not None else "—")
+            ec[1].metric("Perm. entropy",
+                         f"{em['perm_entropy']:.3f}" if em.get("perm_entropy") is not None else "—")
+            ec[2].metric("Higuchi FD",
+                         f"{em['higuchi_fd']:.2f}" if em.get("higuchi_fd") is not None else "—")
+            ec[3].metric("Lempel-Ziv",
+                         f"{em['lziv_complexity']:.2f}" if em.get("lziv_complexity") is not None else "—")
+
+        ictal = findings.get("ictal", {})
+        if ictal.get("n_candidates") is not None:
+            nc = ictal["n_candidates"]
+            st.markdown("**Ictal screener (electrographic seizures)**")
+            if nc:
+                st.warning(f"⚠️ {nc} candidate electrographic seizure(s) flagged "
+                           "for review — screening only, confirm on the trace.")
+                if ictal.get("candidates"):
+                    st.dataframe(pd.DataFrame(ictal["candidates"]),
+                                 use_container_width=True, hide_index=True)
+            else:
+                st.success("No electrographic seizures flagged by the screener.")
+            if ictal.get("caveat"):
+                st.caption(ictal["caveat"])
+
+        spk = findings.get("spike_average", {})
+        if spk.get("field_spread") and spk["field_spread"] != "n/a":
+            st.markdown("**Averaged spike topography**")
+            st.write(f"Field spread: **{spk['field_spread']}** · peak "
+                     f"{spk.get('peak_channel', '?')} @ "
+                     f"{spk.get('peak_latency_ms', '?')} ms "
+                     f"({spk.get('n_spikes_averaged', 0)} spikes averaged)")
+
+        hfc = findings.get("hfo_classify", {})
+        if hfc.get("n_real") is not None:
+            st.markdown("**HFO classification (2-stage)**")
+            hc = st.columns(3)
+            hc[0].metric("Genuine HFOs", str(hfc.get("n_real", 0)))
+            hc[1].metric("Spike-coupled (spkHFO)", str(hfc.get("n_spike_coupled", 0)))
+            hc[2].metric("Artifact rejected", str(hfc.get("n_artifact", 0)))
+
+        gm = findings.get("graph_metrics", {})
+        ab = (gm.get("per_band") or {}).get("alpha") or {}
+        if ab.get("small_world_sigma") is not None:
+            st.markdown("**Network topology (alpha band, descriptive)**")
+            gc = st.columns(3)
+            gc[0].metric("Clustering", f"{ab.get('clustering', 0):.3f}")
+            gc[1].metric("Global efficiency", f"{ab.get('global_efficiency', 0):.3f}")
+            gc[2].metric("Small-world σ", f"{ab.get('small_world_sigma', 0):.2f}")
+
+        norm = findings.get("normative", {})
+        npts = norm.get("points") or []
+        if npts:
+            st.markdown("**Age-normative qEEG z-scores**")
+            if not norm.get("any_verified"):
+                st.warning("⚠️ UNVERIFIED placeholder norms — illustrative only, "
+                           "not for clinical use until replaced with a sourced "
+                           "pediatric normative database.")
+            st.dataframe(pd.DataFrame([
+                {"Metric": p["metric"], "Value": p.get("value"), "z": p.get("z"),
+                 "Verified": p.get("norm_verified")} for p in npts
+            ]), use_container_width=True, hide_index=True)
+
+        score = findings.get("score_report", {})
+        if score.get("sections"):
+            with st.expander("📄 SCORE/IFCN-structured report"):
+                from src.reports.score_report import render_score_markdown, ScoreReport
+                st.markdown(render_score_markdown(ScoreReport(
+                    sections=score["sections"],
+                    impression=score.get("impression", []),
+                    notes=score.get("notes", []),
+                )))
+
     with tab_raw:
         st.subheader(T("raw_header"))
         st.caption(T("raw_caption"))
@@ -1580,6 +1663,47 @@ elif mode == "single":
     if findings:
         st.header(T("step3_header"))
         _render_findings_tabs(findings, key_prefix="single")
+
+        # ── v0.19: on-demand tools (need the recording in memory) ──────────
+        if rec is not None:
+            with st.expander("🛠️ Tools — ICA cleanup · ASR · annotated EDF+ export"):
+                st.caption("On-demand transforms/exports — not part of the "
+                           "automatic analysis.")
+                t1, t2, t3 = st.columns(3)
+                if t1.button("Run ICA cleanup", key="tool_ica"):
+                    try:
+                        from src.preprocessing.ica import run_ica_cleanup, summarize_ica
+                        with st.spinner("Fitting ICA…"):
+                            st.json(summarize_ica(run_ica_cleanup(rec)))
+                    except Exception as e:
+                        st.warning(f"ICA failed: {e}")
+                if t2.button("Run ASR", key="tool_asr"):
+                    try:
+                        from src.preprocessing.asr import run_asr, summarize_asr
+                        with st.spinner("Running ASR…"):
+                            st.json(summarize_asr(run_asr(rec)))
+                    except Exception as e:
+                        st.warning(f"ASR failed: {e}")
+                if t3.button("Build annotated EDF+", key="tool_edf"):
+                    try:
+                        from src.reports.edf_writeback import (
+                            export_annotated_edf, collect_events_from_findings,
+                        )
+                        import os
+                        import tempfile
+                        out = os.path.join(tempfile.mkdtemp(), "kcnq3lens_annotated.edf")
+                        with st.spinner("Writing EDF+…"):
+                            r = export_annotated_edf(
+                                rec, out, collect_events_from_findings(findings))
+                        with open(out, "rb") as fh:
+                            st.download_button(
+                                "⬇️ Download annotated EDF+", fh.read(),
+                                file_name="kcnq3lens_annotated.edf",
+                                mime="application/octet-stream", key="dl_edf")
+                        st.caption(f"{r.n_annotations} events written · "
+                                   "open in free EDFbrowser.")
+                    except Exception as e:
+                        st.warning(f"EDF export failed: {e}")
 
         # v0.8: Save-to-history button so this recording joins the longitudinal series
         with st.expander("🗓️ Save this recording to longitudinal history", expanded=False):

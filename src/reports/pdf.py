@@ -536,6 +536,52 @@ def build_doctor_pdf(
                 st["body"],
             ))
 
+    # ─── v0.19: novel quantitative metrics ──────────────────────────────
+    ent_v = findings.get("entropy") or {}
+    gm_v = findings.get("graph_metrics") or {}
+    ictal_v = findings.get("ictal") or {}
+    spkavg_v = findings.get("spike_average") or {}
+    hfoc_v = findings.get("hfo_classify") or {}
+    norm_v = findings.get("normative") or {}
+    em = ent_v.get("metrics") or {}
+    if any([em, gm_v.get("per_band"), ictal_v.get("n_candidates") is not None,
+            spkavg_v.get("field_spread"), hfoc_v.get("n_real") is not None,
+            norm_v.get("points")]):
+        story.append(Paragraph("Novel quantitative metrics (v0.19)", st["h2"]))
+        rows = []
+        if em.get("sample_entropy") is not None:
+            rows.append(("Sample entropy (background irregularity)",
+                         f"{em['sample_entropy']:.3f}"))
+        if em.get("lziv_complexity") is not None:
+            rows.append(("Lempel-Ziv complexity index", f"{em['lziv_complexity']:.3f}"))
+        spread = spkavg_v.get("field_spread")
+        if spread and spread != "n/a":
+            rows.append(("Averaged spike field spread", str(spread)))
+        if hfoc_v.get("n_spike_coupled") is not None:
+            rows.append(("Spike-coupled HFOs (spkHFO)", str(hfoc_v["n_spike_coupled"])))
+        nc = ictal_v.get("n_candidates")
+        if nc is not None:
+            rows.append(("Ictal candidates (screening — needs review)", str(nc)))
+        if rows:
+            story.append(_kv_table(rows))
+        if nc:
+            story.append(Paragraph(ictal_v.get("caveat", ""), st["body"]))
+        # Age-normative z-scores (placeholder norms are flagged inline).
+        pts = norm_v.get("points") or []
+        zline = ", ".join(f"{p['metric']} z={p['z']:+.1f}"
+                          for p in pts if p.get("z") is not None)
+        if zline:
+            banner = ("" if norm_v.get("any_verified")
+                      else "[UNVERIFIED placeholder norms — illustrative only] ")
+            story.append(Paragraph(f"{banner}Age-normative z-scores: {zline}.", st["body"]))
+        # Alpha-band network topology (descriptive).
+        ab = (gm_v.get("per_band") or {}).get("alpha") or {}
+        if ab.get("small_world_sigma") is not None:
+            story.append(Paragraph(
+                f"Alpha-band network (descriptive): clustering {ab.get('clustering')}, "
+                f"global efficiency {ab.get('global_efficiency')}, small-world σ "
+                f"{ab.get('small_world_sigma')}.", st["body"]))
+
     # ─── v0.17.0: KCNQ3-specific section (if variant contains KCNQ3) ────
     if variant and "KCNQ3" in str(variant).upper():
         story.append(Paragraph(f"KCNQ3-spezifische Befunde — {variant}", st["h2"]))
