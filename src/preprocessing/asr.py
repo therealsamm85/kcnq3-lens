@@ -9,12 +9,13 @@ Backends:
 * ``asr`` — asrpy (maintained MNE-native port of EEGLAB clean_rawdata), the true
   subspace reconstruction. Preferred when installed (optional dep).
 * ``burst_limiter`` — a transparent fallback when asrpy is absent: per-channel
-  robust winsorization (clip beyond cutoff × robust-SD calibrated on a clean
-  segment). This is NOT subspace ASR — it limits bursts rather than
-  reconstructing them — but it salvages high-amplitude segments locally and is
-  fully auditable. The fallback is conservative because aggressive correction can
-  distort genuine epileptiform transients; the result warns to re-check spike
-  morphology on the corrected signal.
+  robust winsorization (clip beyond cutoff × robust-SD computed from the FIRST
+  ``calibration_seconds`` of the recording — there is NO clean-segment detection,
+  so an artifact-heavy opening biases the threshold high). This is NOT subspace
+  ASR — it limits bursts rather than reconstructing them — but it salvages
+  high-amplitude segments locally and is fully auditable. Conservative because
+  aggressive correction can distort genuine epileptiform transients; the result
+  warns to re-check spike morphology on the corrected signal.
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..readers.base import EEGRecording
-from ..utils.trace_viewer import read_trace_window
+from ..utils.trace_viewer import _read_window_by_index
 
 
 @dataclass
@@ -62,7 +63,7 @@ def run_asr(
     if len(names) < 1:
         return AsrResult(available=False, notes=["no EEG channels"])
     secs = min(rec.duration_s, max_seconds)
-    _n, _t, data = read_trace_window(rec, 0.0, secs, channels=names)  # (n_ch, n_samp) µV
+    _t, data = _read_window_by_index(rec, 0.0, secs, eeg_idx)  # (n_ch, n_samp) µV
     if data.shape[1] < int(rec.sfreq):
         return AsrResult(available=False, notes=["too little data for ASR"])
     sf = float(rec.sfreq)
@@ -89,16 +90,34 @@ def run_asr(
         cleaned_uv = data.copy()
         touched = np.zeros(data.shape, dtype=bool)
         for ch in range(data.shape[0]):
-            calib = data[ch, :cal_n]
+            chan = data[ch]
+            calib = chan[:cal_n]
+            calib = calib[np.isfinite(calib)]      # calibrate on finite samples only
+            finite = np.isfinite(chan)
+            if calib.size == 0:
+                # whole calibration window non-finite — cannot calibrate; replace
+                # the non-finite samples with 0 so no NaN leaks downstream.
+                cleaned_uv[ch] = np.where(finite, chan, 0.0)
+                touched[ch] = ~finite
+                continue
             med = float(np.median(calib))
             mad = float(np.median(np.abs(calib - med)))
             sd = 1.4826 * mad if mad > 0 else (float(np.std(calib)) or 1.0)
             thr = cutoff * sd
             lo, hi = med - thr, med + thr
-            mask = (data[ch] < lo) | (data[ch] > hi)
+            # Non-finite samples → replaced by the median; finite outliers clipped.
+            mask = (~finite) | (chan < lo) | (chan > hi)
             touched[ch] = mask
-            cleaned_uv[ch] = np.clip(data[ch], lo, hi)
+            cleaned_uv[ch] = np.clip(np.where(finite, chan, med), lo, hi)
         frac = float(np.mean(touched))
+
+    # Safety net (both backends): the corrected signal handed downstream must be
+    # finite — a NaN/inf channel must never masquerade as clean data.
+    if not np.isfinite(cleaned_uv).all():
+        n_bad = int(np.sum(~np.isfinite(cleaned_uv)))
+        cleaned_uv = np.nan_to_num(cleaned_uv, nan=0.0, posinf=0.0, neginf=0.0)
+        notes.append(f"replaced {n_bad} non-finite sample(s) in the corrected "
+                     "signal with 0 — inspect the affected channels.")
 
     if secs < rec.duration_s:
         notes.append(f"applied to the first {secs:.0f}s (of {rec.duration_s:.0f}s) "

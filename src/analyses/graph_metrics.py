@@ -153,6 +153,7 @@ def compute_graph_metrics(
     bands = list(matrices_by_band.keys())
     per_band: dict[str, dict[str, float]] = {}
     n_nodes = 0
+    sizes: set[int] = set()
     notes: list[str] = []
     for b in bands:
         try:
@@ -161,11 +162,23 @@ def compute_graph_metrics(
             notes.append(f"{b}: skipped ({e})")
             continue
         n_nodes = W.shape[0]
+        sizes.add(n_nodes)
         if n_nodes < 3:
             notes.append(f"{b}: <3 nodes — graph metrics unstable")
+        # Flag disconnection: char_path_length then averages reachable pairs only,
+        # underestimating it (and inflating small-world sigma) — say so.
+        if n_nodes >= 2:
+            D = _distance_matrix(W)
+            off = ~np.eye(n_nodes, dtype=bool)
+            if np.isinf(D[off]).any():
+                notes.append(f"{b}: graph disconnected — char_path_length covers "
+                             "reachable pairs only (small-world sigma inflated).")
         per_band[b] = _band_metrics(W)
     if not per_band:
         notes.append("no usable connectivity matrices")
+    if len(sizes) > 1:
+        notes.append(f"bands have differing node counts {sorted(sizes)} — n_nodes "
+                     "reflects the last band; metrics remain per-band.")
     notes.append("descriptive, intra-patient only — no normative pediatric graph cohort.")
     return GraphMetricsResult(bands=list(per_band.keys()), n_nodes=n_nodes,
                               per_band=per_band, notes=notes)

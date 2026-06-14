@@ -117,11 +117,27 @@ def compute_normative_z(
             ))
             continue
         mean, sd = found
-        z = (value - mean) / sd if sd and sd > 0 else None
+        # Guard a degenerate/garbage norm entry: a non-finite mean/sd or sd<=0
+        # must yield z=None with an explanation, never a 'nan' z rendered as real.
+        if (mean is None or sd is None
+                or not math.isfinite(float(mean)) or not math.isfinite(float(sd))
+                or sd <= 0):
+            mean_out = (round(float(mean), 3)
+                        if (mean is not None and math.isfinite(float(mean))) else None)
+            sd_out = (round(float(sd), 3)
+                      if (sd is not None and math.isfinite(float(sd))) else None)
+            points.append(NormPoint(
+                metric=metric, value=round(value, 3), z=None, age_years=age_years,
+                norm_mean=mean_out, norm_sd=sd_out,
+                norm_source=source, norm_verified=verified,
+                note="norm mean/sd invalid (non-finite or sd<=0) — z undefined",
+            ))
+            continue
+        z = (value - mean) / sd
         any_verified = any_verified or verified
         points.append(NormPoint(
             metric=metric, value=round(value, 3),
-            z=round(float(z), 2) if z is not None else None, age_years=age_years,
+            z=round(float(z), 2), age_years=age_years,
             norm_mean=mean, norm_sd=sd, norm_source=source, norm_verified=verified,
         ))
 
@@ -169,7 +185,8 @@ def render_normative_md(result: NormativeResult) -> str:
     lines.append("| Metric | Value | Norm (mean±sd) | z | Source verified |")
     lines.append("|---|---|---|---|---|")
     for p in result.points:
-        norm = (f"{p.norm_mean:g}±{p.norm_sd:g}" if p.norm_mean is not None else "—")
+        norm = (f"{p.norm_mean:g}±{p.norm_sd:g}"
+                if (p.norm_mean is not None and p.norm_sd is not None) else "—")
         z = "—" if p.z is None else f"{p.z:+.1f}"
         lines.append(f"| {p.metric} | {p.value:g} | {norm} | {z} | "
                      f"{'yes' if p.norm_verified else 'NO'} |")

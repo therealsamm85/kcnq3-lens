@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..readers.base import EEGRecording
-from ..utils.trace_viewer import read_trace_window
+from ..utils.trace_viewer import _read_window_by_index
 
 _FRONTAL_PREFIXES = ("fp",)          # Fp1/Fp2/Fpz — ocular pickup
 _ICLABEL_REMOVE_DEFAULT = ("eye blink", "muscle artifact", "heart beat")
@@ -64,9 +64,14 @@ def run_ica_cleanup(
                          notes=["need ≥3 EEG channels for ICA"])
 
     secs = min(rec.duration_s, max_seconds)
-    _n, _t, data = read_trace_window(rec, 0.0, secs, channels=names)  # (n_ch, n_samp) µV
+    # Read by index (no duplicate-name aliasing; in-memory slice reads the tail).
+    _t, data = _read_window_by_index(rec, 0.0, secs, eeg_idx)
     if data.shape[1] < int(rec.sfreq):
         return IcaResult(available=False, notes=["too little data for ICA"])
+    if not np.isfinite(data).all():
+        return IcaResult(available=False,
+                         notes=["non-finite (NaN/inf) samples in the ICA window — "
+                                "ICA not run; clean the signal first"])
 
     info = mne.create_info(ch_names=names, sfreq=float(rec.sfreq), ch_types="eeg")
     raw = mne.io.RawArray(data * 1e-6, info, verbose="ERROR")
@@ -120,10 +125,11 @@ def run_ica_cleanup(
             removed_classes = {"eye blink": len(removed)} if removed else {}
 
     ica.exclude = removed
-    if wavelet_enhanced and removed:
-        notes.append("wavelet_enhanced=True requested; W-ICA wavelet thresholding "
-                     "is applied to excluded components before subtraction.")
-        _wavelet_threshold_sources(ica, raw_hp, removed)
+    if wavelet_enhanced:
+        notes.append("wavelet_enhanced=True: full W-ICA source reinjection is NOT "
+                     "implemented in this backend — excluded components are removed "
+                     "outright (identical to plain ICA). For true wavelet-enhanced "
+                     "cleaning, use mne-icalabel plus a W-ICA reinjection step.")
 
     cleaned = raw.copy()
     ica.apply(cleaned, verbose="ERROR")
@@ -144,28 +150,6 @@ def run_ica_cleanup(
         removed_components=removed, removed_classes=removed_classes,
         backend=backend, cleaned_recording=new_rec, notes=notes,
     )
-
-
-def _wavelet_threshold_sources(ica, raw_hp, comps) -> None:
-    """HAPPE-style W-ICA: soft-threshold the artifact source time-courses so only
-    the high-amplitude artifact transients (not the whole component) are removed.
-
-    Falls back silently to plain component removal if PyWavelets is absent.
-    """
-    try:
-        import pywt
-    except ImportError:
-        return
-    sources = ica.get_sources(raw_hp).get_data()
-    for ci in comps:
-        s = sources[ci]
-        coeffs = pywt.wavedec(s, "coif5", level=5)
-        thr = np.median(np.abs(coeffs[-1])) / 0.6745 * np.sqrt(2 * np.log(len(s)))
-        coeffs = [coeffs[0]] + [pywt.threshold(c, thr, mode="soft") for c in coeffs[1:]]
-        sources[ci] = pywt.waverec(coeffs, "coif5")[: len(s)]
-    # Note: mne applies exclusion via the unmixing matrix; full W-ICA reinjection
-    # of the thresholded sources is left to the ICLabel path. The flag is recorded
-    # for transparency.
 
 
 def summarize_ica(result: IcaResult) -> dict:

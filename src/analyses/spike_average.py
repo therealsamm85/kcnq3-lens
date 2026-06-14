@@ -68,7 +68,7 @@ def compute_spike_average(
     spike_events: list[dict] | None = None,
     window_ms: tuple[float, float] = (-100.0, 100.0),
     max_spikes: int = 500,
-    focal_fraction: float = 0.5,
+    focal_fraction: float = 0.6,
     bilateral_fraction: float = 0.3,
 ) -> SpikeAverageResult:
     """Average detected spikes at their peaks → peak voltage topography.
@@ -98,17 +98,30 @@ def compute_spike_average(
 
     acc = np.zeros((len(eeg_idx), n_win))
     used = 0
+    n_nonfinite = 0
     for t in times:
         center = int(round(t * sf))
         seg = _read_samples(rec, center - pre, n_win)
         if seg is None:
             continue
-        acc += seg[eeg_idx]
+        s = seg[eeg_idx]
+        # Drop windows with NaN/inf (electrode pop, saturation, interpolated
+        # gaps) — a non-finite value must never reach the averaged topography.
+        if not np.isfinite(s).all():
+            n_nonfinite += 1
+            continue
+        acc += s
         used += 1
     if used == 0:
-        return SpikeAverageResult(0, window_ms, None, None,
-                                  notes=["no spike windows were in range"])
+        note = "no spike windows were in range"
+        if n_nonfinite:
+            note = f"all {n_nonfinite} spike windows contained non-finite samples"
+        return SpikeAverageResult(0, window_ms, None, None, notes=[note])
     avg = acc / used
+    if not np.isfinite(avg).all():
+        return SpikeAverageResult(used, window_ms, None, None, field_spread="n/a",
+                                  notes=["averaged field contained non-finite "
+                                         "values — topography suppressed"])
 
     # Peak latency = where the averaged scalp field is strongest (global power).
     field_power = np.sum(np.abs(avg), axis=0)
@@ -129,13 +142,15 @@ def compute_spike_average(
         by_hemi = {"left": 0.0, "right": 0.0, "mid": 0.0}
         for nm, v in zip(names, abs_vals):
             by_hemi[_hemisphere(nm)] += float(v)
-        peak_hemi_val = float(abs_vals.max())
         left_sig = by_hemi["left"] >= bilateral_fraction * total
         right_sig = by_hemi["right"] >= bilateral_fraction * total
-        if left_sig and right_sig:
-            field_spread = "bilateral"
-        elif top_frac >= focal_fraction:
+        # Focal FIRST: a single dominant channel is focal even with some
+        # contralateral volume conduction. Only call bilateral when both
+        # hemispheres are substantial AND no single channel dominates.
+        if top_frac >= focal_fraction:
             field_spread = "focal"
+        elif left_sig and right_sig:
+            field_spread = "bilateral"
         else:
             field_spread = "regional"
 

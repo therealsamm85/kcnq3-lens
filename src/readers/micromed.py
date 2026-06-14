@@ -60,7 +60,12 @@ def read_micromed(path: str | Path) -> EEGRecording:
     reader.parse_header()
 
     sig_chans = reader.header["signal_channels"]
-    names = [str(n) for n in sig_chans["name"]]
+    raw_names = [str(n) for n in sig_chans["name"]]
+    # Normalize like the EDF reader so referenced/prefixed labels ('EEG Fp1',
+    # 'Fp1-G2', 'Fp1-Ref') still match the EEG allowlist — otherwise NONE match
+    # and every channel (incl. ECG/EMG/markers) is misclassified as EEG.
+    names = [n.replace("EEG ", "").replace("eeg ", "").split("-")[0].strip()
+             for n in raw_names]
     sfreq = float(reader.get_signal_sampling_rate())
     n_samples = int(reader.get_signal_size(block_index=0, seg_index=0))
 

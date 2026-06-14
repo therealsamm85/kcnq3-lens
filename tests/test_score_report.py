@@ -74,6 +74,32 @@ check("absent interictal → 'No interictal ... quantified'",
       any("No interictal" in s for s in sparse.sections["Interictal epileptiform activity"]))
 
 
+print("\n── D2: audit regression — non-finite never renders ────────────────")
+nan_findings = {
+    "background": {"posterior_dominant_rhythm_hz": float("nan"),
+                   "delta_alpha_ratio": float("inf")},
+    "morphology": {"events_per_minute": float("nan")},
+    "swi": {"swi_n3_only_pct": float("nan"), "csws_criterion_met": True},
+    "ictal": {"n_candidates": float("nan")},
+    "hfo_ripples": {"rate_per_min": float("inf")},
+}
+import re
+nan_rep = build_score_report(nan_findings)
+nan_md = render_score_markdown(nan_rep).lower()
+# Word-boundary search so legit words ("dominant") don't false-match.
+check("no standalone 'nan' token leaks into the report",
+      re.search(r"\bnan\b", nan_md) is None, nan_md[:200])
+check("no standalone 'inf' token leaks into the report",
+      re.search(r"\binf\b", nan_md) is None)
+check("non-finite PDR → 'not assessed' (not a real value)",
+      any("not assessed" in s for s in nan_rep.sections["Background activity"]))
+check("non-finite SWI → CSWS criterion is NOT asserted MET on garbage",
+      not any("CSWS criterion MET" in s for s in nan_rep.sections["Interictal epileptiform activity"]))
+check("NaN n_candidates → 'not run' (NOT a false 'no seizures')",
+      any("not run" in s for s in nan_rep.sections["Ictal findings"])
+      and not any("No electrographic" in s for s in nan_rep.sections["Ictal findings"]))
+
+
 print("\n── D2: render + serialization ─────────────────────────────────────")
 md = render_score_markdown(rep)
 check("markdown has all five sections + impression",

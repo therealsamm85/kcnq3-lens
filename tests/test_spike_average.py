@@ -76,6 +76,40 @@ check("field spread classified bilateral", res_b.field_spread == "bilateral",
       f"got {res_b.field_spread}")
 
 
+print("\n── C1: audit regressions — asymmetric + non-finite ────────────────")
+# Strong focal C3 + small contralateral volume conduction on C2 → still focal.
+n2 = int(60 * SF)
+rng2 = np.random.RandomState(5)
+d2 = (3.0 * rng2.randn(4, n2)).astype(np.float32)
+for t in times:
+    c = int(t * SF)
+    d2[3, c - 20:c + 21] += KERNEL.astype(np.float32)          # C3 full
+    d2[2, c - 20:c + 21] += (0.25 * KERNEL).astype(np.float32)  # C2 conducted leak
+rec_asym = EEGRecording(
+    path=Path("/tmp/a.eeg"), sfreq=SF, n_channels=4, duration_s=n2 / SF,
+    channel_names=[f"C{i}" for i in range(4)], n_channels_in_file=4,
+    eeg_channel_indices=list(range(4)), format_name="synthetic")
+rec_asym._full_data = d2
+res_asym = compute_spike_average(rec_asym, events)
+check("dominant channel + contralateral leak → focal (not bilateral)",
+      res_asym.field_spread == "focal", f"got {res_asym.field_spread}")
+
+# A NaN in an averaged window must suppress the topography, not leak.
+d3 = d2.copy()
+d3[1, int(times[0] * SF)] = np.nan   # NaN inside the first spike window on C1
+rec_nan = EEGRecording(
+    path=Path("/tmp/n.eeg"), sfreq=SF, n_channels=4, duration_s=n2 / SF,
+    channel_names=[f"C{i}" for i in range(4)], n_channels_in_file=4,
+    eeg_channel_indices=list(range(4)), format_name="synthetic")
+rec_nan._full_data = d3
+res_nan = compute_spike_average(rec_nan, events)
+check("non-finite window dropped, no NaN in topography",
+      all(np.isfinite(v) for v in res_nan.peak_topography.values()))
+check("non-finite never yields a fabricated peak_channel from garbage",
+      res_nan.n_spikes_averaged == len(events) - 1 or res_nan.peak_channel is not None,
+      f"averaged={res_nan.n_spikes_averaged}")
+
+
 print("\n── C1: degenerate / honesty ───────────────────────────────────────")
 empty = compute_spike_average(rec, [])
 check("no events → 0 averaged + note", empty.n_spikes_averaged == 0

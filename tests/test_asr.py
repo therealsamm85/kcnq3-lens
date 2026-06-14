@@ -78,6 +78,23 @@ check("clean recording → ~nothing corrected", res_clean.fraction_corrected < 0
 check("summary JSON-serializable", isinstance(json.dumps(summarize_asr(res)), str))
 
 
+print("\n── B2: audit regression — non-finite never leaks ──────────────────")
+nan_data = (10.0 * rng.randn(2, n)).astype(np.float32)
+nan_data[0, 100] = np.nan        # NaN inside the calibration window on ch0
+nan_data[1, 5000] = np.inf       # inf later on ch1
+nan_rec = EEGRecording(
+    path=Path("/tmp/nan.eeg"), sfreq=SF, n_channels=2, duration_s=n / SF,
+    channel_names=["C3", "C4"], n_channels_in_file=2, eeg_channel_indices=[0, 1],
+    format_name="synthetic")
+nan_rec._full_data = nan_data
+res_nan = run_asr(nan_rec, cutoff=20.0)
+out = res_nan.cleaned_recording._full_data
+check("cleaned signal is fully finite (no whole-channel NaN)",
+      bool(np.isfinite(out).all()))
+check("non-finite samples counted as corrected (fraction > 0)",
+      res_nan.fraction_corrected > 0.0, f"got {res_nan.fraction_corrected}")
+
+
 print(f"\n{'='*60}\n  PASS: {n_pass}\n  FAIL: {n_fail}\n{'='*60}")
 if n_fail:
     sys.exit(1)

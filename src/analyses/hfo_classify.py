@@ -17,6 +17,7 @@ on the scalp.
 """
 from __future__ import annotations
 
+import math
 from bisect import bisect_left
 from dataclasses import dataclass, field
 
@@ -47,7 +48,7 @@ def _nearest_within(sorted_times: list[float], t: float, tol: float) -> bool:
         return False
     i = bisect_left(sorted_times, t)
     for j in (i - 1, i, i + 1):
-        if 0 <= j < len(sorted_times) and abs(sorted_times[j] - t) <= tol:
+        if 0 <= j < len(sorted_times) and abs(sorted_times[j] - t) <= tol + 1e-9:
             return True
     return False
 
@@ -83,14 +84,21 @@ def classify_hfos(
         dur = ev.get("duration_ms")
         rms_z = ev.get("rms_z", 0.0) or 0.0
         peak = _event_peak(ev)
-        n_cycles = (float(pf) * float(dur) / 1000.0) if (pf and dur) else None
+        # Explicit None + finite checks (NaN is truthy in Python, so the old
+        # `if (pf and dur)` and `n_cycles < min_cycles` let NaN/0 slip through
+        # and be mislabeled a genuine HFO).
+        pf_ok = pf is not None and math.isfinite(float(pf))
+        dur_ok = dur is not None and math.isfinite(float(dur)) and float(dur) > 0
+        n_cycles = (float(pf) * float(dur) / 1000.0) if (pf_ok and dur_ok) else None
 
-        if pf is None or not (lo <= float(pf) <= hi):
-            cls, reason = "artifact", "peak frequency outside the HFO band"
-        elif n_cycles is not None and n_cycles < min_cycles:
+        if not pf_ok or not (lo <= float(pf) <= hi):
+            cls, reason = "artifact", "peak frequency outside the HFO band or invalid"
+        elif not dur_ok:
+            cls, reason = "artifact", "missing/invalid duration"
+        elif n_cycles < min_cycles:
             cls, reason = "artifact", f"<{min_cycles:g} oscillation cycles (transient/blip)"
-        elif abs(float(rms_z)) > max_rms_z:
-            cls, reason = "artifact", "extreme amplitude (likely electrode pop)"
+        elif (not math.isfinite(float(rms_z))) or abs(float(rms_z)) > max_rms_z:
+            cls, reason = "artifact", "extreme/invalid amplitude (likely electrode pop)"
         else:
             cls, reason = "real", "oscillatory and in-band"
 

@@ -45,40 +45,57 @@ def _resolve_channels(rec: EEGRecording, channels: list[str] | None) -> list[int
     return out
 
 
+def _read_window_by_index(
+    rec: EEGRecording, start_s: float, duration_s: float, ch_idx: list[int],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (t_seconds, data[len(ch_idx), n_samples]) for a window, reading by
+    file-channel INDEX (no name round-trip → duplicate names can't alias).
+
+    Slices the in-memory buffer directly when available (so a sub-30 s recording
+    and the trailing partial epoch of an N×30 s+ recording are read exactly);
+    otherwise falls back to the lazy 30 s-epoch reader (whose trailing partial
+    epoch is dropped — acceptable on the multi-hour recordings that path serves).
+    """
+    sf = float(rec.sfreq)
+    start = max(0, int(round(start_s * sf)))
+    n = max(1, int(round(duration_s * sf)))
+    end = start + n
+    full = rec._full_data
+    if full is not None:
+        seg = full[:, start:end]
+    else:
+        spe = int(round(30.0 * sf))
+        if spe <= 0:
+            seg = np.zeros((rec.n_channels_in_file, 0))
+        else:
+            ep0, ep1 = start // spe, (end - 1) // spe
+            chunks = []
+            for ep in range(ep0, ep1 + 1):
+                d = rec.read_epoch(ep, 30.0)
+                if d is None:
+                    break
+                chunks.append(np.asarray(d, dtype=float))
+            if chunks:
+                f = np.concatenate(chunks, axis=1)
+                local = start - ep0 * spe
+                seg = f[:, local: local + n]
+            else:
+                seg = np.zeros((rec.n_channels_in_file, 0))
+    data = seg[ch_idx] if ch_idx else seg
+    t = start_s + np.arange(data.shape[1]) / sf
+    return t, np.asarray(data, dtype=float)
+
+
 def read_trace_window(
     rec: EEGRecording,
     start_s: float = 0.0,
     duration_s: float = 10.0,
     channels: list[str] | None = None,
 ) -> tuple[list[str], np.ndarray, np.ndarray]:
-    """Return (channel_names, t_seconds, data[n_ch, n_samples]) for a window.
-
-    Reads only the 30 s epochs spanning the requested window via the lazy epoch
-    interface, then slices — so it stays cheap on multi-hour recordings.
-    """
-    sf = float(rec.sfreq)
+    """Return (channel_names, t_seconds, data[n_ch, n_samples]) for a window."""
     ch_idx = _resolve_channels(rec, channels)
     names = [rec.channel_names[i] for i in ch_idx]
-    start = max(0, int(round(start_s * sf)))
-    n = max(1, int(round(duration_s * sf)))
-    end = start + n
-    spe = int(round(30.0 * sf))
-    if spe <= 0:
-        return names, np.zeros(0), np.zeros((len(ch_idx), 0))
-    ep0, ep1 = start // spe, (end - 1) // spe
-    chunks = []
-    for ep in range(ep0, ep1 + 1):
-        d = rec.read_epoch(ep, 30.0)
-        if d is None:
-            break
-        chunks.append(np.asarray(d, dtype=float))
-    if not chunks:
-        return names, np.zeros(0), np.zeros((len(ch_idx), 0))
-    full = np.concatenate(chunks, axis=1)
-    local_start = start - ep0 * spe
-    seg = full[:, local_start: local_start + n]
-    data = seg[ch_idx] if ch_idx else seg
-    t = start_s + np.arange(data.shape[1]) / sf
+    t, data = _read_window_by_index(rec, start_s, duration_s, ch_idx)
     return names, t, data
 
 
@@ -132,7 +149,9 @@ def to_mne_raw(rec: EEGRecording, max_seconds: float = 600.0):
     ch_idx = rec.eeg_channel_indices or list(range(rec.n_channels_in_file))
     names = [str(rec.channel_names[i]) for i in ch_idx]
     n = int(min(rec.duration_s, max_seconds))
-    _names, _t, data = read_trace_window(rec, 0.0, n, channels=names)
+    # Read by INDEX (not by name) so a file with duplicate channel labels does
+    # not alias two channels onto the same data.
+    _t, data = _read_window_by_index(rec, 0.0, n, ch_idx)
     info = mne.create_info(ch_names=names, sfreq=sf, ch_types="eeg")
     return mne.io.RawArray(data * 1e-6, info, verbose="ERROR")  # µV → V for MNE
 

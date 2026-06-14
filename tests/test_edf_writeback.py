@@ -99,6 +99,26 @@ check("collect: channel appended to label", any("Cz" in c["label"] for c in coll
 check("collect: sorted by onset", [c["onset_s"] for c in collected] == [1.0, 2.0, 3.0])
 
 
+print("\n── A1: audit regressions — fractional rate + bad annotations ──────")
+# Non-integer sample rate must still write (rounded), not crash.
+rec_frac = _make_rec(n_ch=2, sfreq=256.5, seconds=60)
+res_frac = export_annotated_edf(rec_frac, Path(tempfile.mkdtemp()) / "frac.edf", [])
+check("fractional sample rate writes without crashing", res_frac.channels_written == 2)
+check("fractional-rate note surfaced", any("rounded" in n for n in res_frac.notes))
+
+# Malformed annotations (NaN onset, None onset, negative duration) must not abort.
+bad_events = [
+    {"onset_s": float("nan"), "label": "nan-onset"},
+    {"onset_s": None, "label": "none-onset"},
+    {"onset_s": 10.0, "duration_s": -5.0, "label": "neg-dur"},   # kept, dur clamped
+    {"onset_s": 5.0, "label": "ok"},
+]
+res_bad = export_annotated_edf(_make_rec(n_ch=2, seconds=60),
+                               Path(tempfile.mkdtemp()) / "bad.edf", bad_events)
+check("malformed annotations skipped, export still succeeds; only the 2 valid kept",
+      res_bad.n_annotations == 2, f"got {res_bad.n_annotations}")
+
+
 print(f"\n{'='*60}\n  PASS: {n_pass}\n  FAIL: {n_fail}\n{'='*60}")
 if n_fail:
     sys.exit(1)

@@ -113,6 +113,34 @@ check("no frontal channels → runs, removes nothing, notes why",
 check("summary JSON-serializable", isinstance(json.dumps(summarize_ica(res)), str))
 
 
+print("\n── B1: audit regressions — non-finite + length preservation ───────")
+# Non-finite input degrades gracefully (available=False), not an exception.
+nan_d = data.copy()
+nan_d[0, 1000] = np.nan
+nan_rec = EEGRecording(
+    path=Path("/tmp/nanica.eeg"), sfreq=SF, n_channels=4, duration_s=n / SF,
+    channel_names=["Fp1", "Fp2", "C3", "C4"], n_channels_in_file=4,
+    eeg_channel_indices=[0, 1, 2, 3], format_name="synthetic")
+nan_rec._full_data = nan_d
+res_nan = run_ica_cleanup(nan_rec)
+check("non-finite input → available False (no exception)",
+      res_nan.available is False and any("non-finite" in nt for nt in res_nan.notes))
+
+# A non-30s-multiple recording keeps its full length (no silent tail drop).
+n47 = int(47 * SF)
+d47 = np.vstack([80 * blink[:n47] + 10 * brain1[:n47], 75 * blink[:n47] + 10 * brain2[:n47],
+                 3 * blink[:n47] + 40 * brain1[:n47], 3 * blink[:n47] + 40 * brain2[:n47]]).astype(np.float32)
+rec47 = EEGRecording(
+    path=Path("/tmp/ica47.eeg"), sfreq=SF, n_channels=4, duration_s=n47 / SF,
+    channel_names=["Fp1", "Fp2", "C3", "C4"], n_channels_in_file=4,
+    eeg_channel_indices=[0, 1, 2, 3], format_name="synthetic")
+rec47._full_data = d47
+res47 = run_ica_cleanup(rec47)
+check("47s recording cleaned at full length (no dropped tail)",
+      res47.available and res47.cleaned_recording._full_data.shape[1] == n47,
+      f"got {res47.cleaned_recording._full_data.shape[1] if res47.cleaned_recording is not None else None}")
+
+
 print(f"\n{'='*60}\n  PASS: {n_pass}\n  FAIL: {n_fail}\n{'='*60}")
 if n_fail:
     sys.exit(1)

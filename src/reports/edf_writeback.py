@@ -131,21 +131,32 @@ def export_annotated_edf(
         if hi - lo < 1e-6:
             lo, hi = lo - 1.0, hi + 1.0
         label = str(rec.channel_names[ci])[:16]
+        # EDF needs an integer number of samples per 1 s data record, so declare
+        # the (rounded) integer rate that matches the whole-second trim — passing
+        # a fractional rate makes edfio reject the write.
         signals.append(edfio.EdfSignal(
-            sig, sampling_frequency=sf, label=label,
+            sig, sampling_frequency=float(samples_per_record), label=label,
             physical_dimension="uV", physical_range=(lo, hi),
         ))
+
+    if float(samples_per_record) != sf:
+        notes.append(f"sample rate {sf:g} Hz rounded to {samples_per_record} Hz "
+                     "for the integer-rate EDF — timing is approximate.")
 
     annotations = []
     n_ann = 0
     max_onset = keep / sf
     for ev in (events or []):
-        onset = _event_onset(ev) if "onset_s" not in ev else float(ev["onset_s"])
-        if onset is None or onset < 0 or onset > max_onset:
+        # Tolerant onset extraction (handles onset_s/time_s/... and present-but-
+        # None without raising); reject non-finite / out-of-range onsets.
+        onset = _event_onset(ev)
+        if onset is None or not np.isfinite(onset) or onset < 0 or onset > max_onset:
             continue
+        dur = float(ev.get("duration_s", 0.0) or 0.0)
+        if not np.isfinite(dur) or dur < 0:
+            dur = 0.0                       # clamp negative/non-finite duration
         annotations.append(edfio.EdfAnnotation(
-            onset=float(onset),
-            duration=float(ev.get("duration_s", 0.0) or 0.0),
+            onset=float(onset), duration=dur,
             text=str(ev.get("label", "event"))[:40],
         ))
         n_ann += 1

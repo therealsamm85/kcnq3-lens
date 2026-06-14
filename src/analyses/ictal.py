@@ -158,7 +158,10 @@ def screen_ictal(
     )
     return IctalScreenResult(
         n_candidates=len(merged), candidates=merged,
-        minutes_screened=round(rec.duration_s / 60.0, 1),
+        # Report time ACTUALLY screened (whole 30 s epochs processed), not the
+        # nominal recording length — a sub-30 s clip or un-screened tail is not
+        # claimed as covered.
+        minutes_screened=round(rec.n_epochs * 30 / 60.0, 1),
         channels_screened=[nm for _i, nm in ch_pairs],
         notes=notes, caveat=caveat,
     )

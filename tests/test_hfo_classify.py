@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.analyses.hfo_classify import classify_hfos, summarize_hfo_classify
@@ -60,6 +62,26 @@ check("HFO within coupling window of a spike → spkHFO",
 uncoupled = classify_hfos(ev2, spike_events=[{"time_s": 10.5}])  # 500 ms away
 check("HFO far from any spike → plain real",
       uncoupled.per_event[0]["classification"] == "real")
+
+
+print("\n── C2: audit regressions — non-finite / zero-duration ─────────────")
+bad = [
+    hfo(1.0, freq=150, dur_ms=float("nan")),   # NaN duration
+    hfo(2.0, freq=float("nan"), dur_ms=40),     # NaN freq
+    hfo(3.0, freq=150, dur_ms=40, rms_z=float("nan")),  # NaN amplitude
+    hfo(4.0, freq=150, dur_ms=0.0),             # zero duration
+    hfo(5.0, freq=180, dur_ms=float("inf")),    # inf duration
+]
+rb = classify_hfos(bad)
+clb = [e["classification"] for e in rb.per_event]
+check("NaN duration → artifact (not 'real')", clb[0] == "artifact", f"got {clb[0]}")
+check("NaN frequency → artifact", clb[1] == "artifact", f"got {clb[1]}")
+check("NaN amplitude → artifact", clb[2] == "artifact", f"got {clb[2]}")
+check("zero duration → artifact", clb[3] == "artifact", f"got {clb[3]}")
+check("inf duration → artifact", clb[4] == "artifact", f"got {clb[4]}")
+check("no non-finite n_cycles leaks into per_event",
+      all(e["n_cycles"] is None or np.isfinite(e["n_cycles"]) for e in rb.per_event))
+check("all five garbage events rejected (n_real == 0)", rb.n_real == 0, f"got {rb.n_real}")
 
 
 print("\n── C2: honesty + degenerate ───────────────────────────────────────")

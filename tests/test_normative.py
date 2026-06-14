@@ -79,6 +79,22 @@ check("verified norms set any_verified True", res_v.any_verified is True)
 check("verified norms → no unverified banner in render",
       "not for clinical use" not in render_normative_md(res_v))
 
+print("\n── D1: audit regression — degenerate norm guard ───────────────────")
+# sd<=0 norm → z None WITH an explanatory note (not an empty note).
+deg = compute_normative_z(findings, 5.0,
+                          norms={"pdr_hz": {"source": "x", "verified": True,
+                                            "bins": [(4, 6, 8.0, 0.0)]}})
+check("sd<=0 → z None + explanatory note",
+      deg.points[0].z is None and "z undefined" in deg.points[0].note)
+# Non-finite norm mean → z None, no 'nan' rendered.
+nanmean = compute_normative_z(findings, 5.0,
+                              norms={"pdr_hz": {"source": "x", "verified": True,
+                                                "bins": [(4, 6, float("nan"), 1.0)]}})
+check("non-finite norm mean → z None (no nan z)", nanmean.points[0].z is None)
+import re as _re
+check("rendered table has no standalone 'nan'",
+      _re.search(r"\bnan\b", render_normative_md(nanmean).lower()) is None)
+
 check("summary JSON-serializable", isinstance(json.dumps(summarize_normative(res)), str))
 
 

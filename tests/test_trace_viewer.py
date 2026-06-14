@@ -99,6 +99,32 @@ check("data scaled µV→V for MNE (500 µV → 5e-4 V)", abs(val - 500e-6) < 1e
       f"got {val}")
 
 
+print("\n── A4: audit regressions — short recording + duplicate names ──────")
+# A recording shorter than one 30 s epoch must still render its samples.
+short = _make_index_rec(n_ch=2, sfreq=100.0, seconds=3)   # 3 s < 30 s epoch
+_n, _t, sd = read_trace_window(short, 0.0, 3.0)
+check("sub-30s recording returns its samples (not a blank window)",
+      sd.shape[1] == 300, f"got {sd.shape}")
+
+# Trailing partial epoch (47 s, not a multiple of 30) read in full from memory.
+rec47 = _make_index_rec(n_ch=2, sfreq=100.0, seconds=47)
+_n, _t, d47 = read_trace_window(rec47, 0.0, 47.0)
+check("47s in-memory recording read in full (no dropped tail)",
+      d47.shape[1] == 4700 and d47[0, -1] == 4699.0, f"got {d47.shape}")
+
+# Duplicate channel names must not alias to one file index.
+dup = EEGRecording(
+    path=Path("/tmp/dup.eeg"), sfreq=100.0, n_channels=3, duration_s=60,
+    channel_names=["EEG", "EEG", "Cz"], n_channels_in_file=3,
+    eeg_channel_indices=[0, 1, 2], format_name="synthetic")
+dup._full_data = np.array([np.full(6000, 1.0), np.full(6000, 2.0), np.full(6000, 3.0)],
+                          dtype=np.float32)
+raw_dup = to_mne_raw(dup, max_seconds=10.0)
+rows = raw_dup.get_data()[:, 0] * 1e6   # back to µV
+check("duplicate-named channels keep distinct data (no aliasing)",
+      list(rows) == [1.0, 2.0, 3.0], f"got {list(rows)}")
+
+
 print(f"\n{'='*60}\n  PASS: {n_pass}\n  FAIL: {n_fail}\n{'='*60}")
 if n_fail:
     sys.exit(1)

@@ -133,10 +133,13 @@ def _higuchi_fd(x: np.ndarray, kmax: int = 10) -> float:
 
 
 def _lziv_complexity(x: np.ndarray) -> float:
-    """Normalized Lempel-Ziv complexity (distinct-substring count, median-binarized).
+    """Lempel-Ziv phrase-complexity index (distinct-substring count, median-binarized).
 
     Binarizes the signal about its median, counts distinct substrings (LZ78-style
-    parsing), and normalizes by n/log2(n) so a random sequence → ~1.0.
+    parsing), and scales by log2(n)/n. This is a relative complexity index for
+    intra-patient comparison — it is NOT normalized to a [0,1] range; the random-
+    signal baseline is length-dependent (~1.5–1.7 at typical epoch lengths), and
+    smoother/more-regular signals score lower.
     """
     n = len(x)
     if n < 4:
