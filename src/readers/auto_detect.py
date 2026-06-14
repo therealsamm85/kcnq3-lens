@@ -32,7 +32,13 @@ def load_eeg(path: str | Path, **kwargs) -> EEGRecording:
     if is_edf_compatible(path):
         return read_edf(path)
 
+    # Micromed .TRC (European EMU systems) via the optional python-neo backend.
+    if path.suffix.lower() == ".trc":
+        from .micromed import read_micromed
+        return read_micromed(path)
+
     raise ValueError(
         f"Could not detect EEG format for {path.name}. "
-        f"Supported: .eeg (Nihon Kohden), .edf, .bdf, .vhdr, .set"
+        f"Supported: .eeg (Nihon Kohden), .edf, .bdf, .vhdr, .set, "
+        f".trc (Micromed, needs python-neo)"
     )
